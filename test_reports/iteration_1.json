@@ -1,0 +1,26 @@
+{
+  "summary": "First iteration: Tested Dynasty 8 backend (22 pytest tests, all green) and frontend (login, dashboard, new sale calculator, my sales, admin panel charts/CSV/XLSX, activity log, RBAC redirect). All critical flows work. No blocking bugs found.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "AdminPanel", "issues": ["Recharts logs width(-1)/height(-1) warnings on initial mount (ResponsiveContainer before layout). Non-blocking; charts render after layout. Consider adding min-h to chart wrappers."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_dynasty8.py", "/app/test_reports/pytest/iteration_1.xml"],
+  "action_items": ["Optional: add minHeight to recharts ResponsiveContainer parents in AdminPanel to silence width(-1)/height(-1) warnings."],
+  "critical_code_review_comments": [
+    "server.py uses synchronous `requests.get` inside async /auth/session (blocks event loop). Switch to httpx.AsyncClient.",
+    "CORS_ORIGINS default is '*' combined with allow_credentials=True; browsers reject. Ensure prod sets explicit origin.",
+    "log_activity wraps every write but lacks try/except — failures would 500 the parent endpoint.",
+    "server.py is ~600 lines and growing; consider splitting into routers (auth, sales, stats, export)."
+  ],
+  "updated_files": ["/app/backend/tests/test_dynasty8.py"],
+  "success_rate": {"backend": "100% (22/22)", "frontend": "100% of flows reachable"},
+  "test_credentials": "Created via mongosh per /app/auth_testing.md: admin@dynasty8.no (admin) + sara@dynasty8.no (ansatt). Tokens ephemeral.",
+  "seed_data_creation": "2 users + 2 sessions inserted into test_database; sales created and deleted by tests (TEST_Ola).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Use mongosh snippet in /app/auth_testing.md to mint fresh tokens. Backend regression at /app/backend/tests/test_dynasty8.py. Price calc canonical case: Oslo Sentrum/MLO/garasje+hage/2 tenants/10% = 27810."
+}
