@@ -49,6 +49,7 @@ class User(BaseModel):
     picture: Optional[str] = None
     role: Literal["admin", "ansatt"] = "ansatt"
     employee_number: Optional[str] = None
+    is_active: bool = True
     created_at: datetime
 
 class Sale(BaseModel):
@@ -165,6 +166,10 @@ async def get_current_user(request: Request) -> User:
     user_doc = await db.users.find_one({"user_id": session_doc["user_id"]}, {"_id": 0})
     if not user_doc:
         raise HTTPException(status_code=401, detail="User not found")
+    if user_doc.get("is_active", True) is False:
+        # Revoke all sessions if user has been deactivated
+        await db.user_sessions.delete_many({"user_id": user_doc["user_id"]})
+        raise HTTPException(status_code=403, detail="Brukerkontoen er deaktivert")
     if isinstance(user_doc.get("created_at"), str):
         user_doc["created_at"] = datetime.fromisoformat(user_doc["created_at"])
     return User(**user_doc)
@@ -219,6 +224,7 @@ async def auth_session(request: Request, response: Response):
             "picture": picture,
             "role": role,
             "employee_number": None,
+            "is_active": True,
             "created_at": datetime.now(timezone.utc).isoformat(),
         })
 
@@ -491,16 +497,65 @@ async def list_users(user: User = Depends(require_admin)):
 
 @api_router.patch("/users/{user_id}")
 async def update_user(user_id: str, body: dict, admin: User = Depends(require_admin)):
+    target = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+    if not target:
+        raise HTTPException(status_code=404, detail="Bruker ikke funnet")
+
     updates = {}
-    for k in ("role", "employee_number", "name"):
+    for k in ("role", "employee_number", "name", "is_active"):
         if k in body:
             updates[k] = body[k]
+    if "role" in updates and updates["role"] not in ("admin", "ansatt"):
+        raise HTTPException(status_code=400, detail="Ugyldig rolle")
+
+    # Prevent admin from demoting / deactivating themselves
+    if user_id == admin.user_id:
+        if updates.get("role") == "ansatt":
+            raise HTTPException(status_code=400, detail="Du kan ikke fjerne din egen admin-rolle")
+        if updates.get("is_active") is False:
+            raise HTTPException(status_code=400, detail="Du kan ikke deaktivere din egen konto")
+
     if not updates:
         raise HTTPException(status_code=400, detail="Ingen felter å oppdatere")
-    res = await db.users.update_one({"user_id": user_id}, {"$set": updates})
-    if res.matched_count == 0:
+
+    await db.users.update_one({"user_id": user_id}, {"$set": updates})
+
+    # If user got deactivated, revoke all sessions immediately
+    if updates.get("is_active") is False:
+        await db.user_sessions.delete_many({"user_id": user_id})
+
+    # Update employee_name on existing sales if name changed
+    if "name" in updates:
+        await db.sales.update_many({"employee_id": user_id}, {"$set": {"employee_name": updates["name"]}})
+
+    await log_activity(admin.user_id, admin.email, "user_updated",
+                       {"user_id": user_id, "changes": list(updates.keys())})
+    return {"ok": True}
+
+
+@api_router.post("/users/{user_id}/revoke-sessions")
+async def revoke_user_sessions(user_id: str, admin: User = Depends(require_admin)):
+    target = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+    if not target:
         raise HTTPException(status_code=404, detail="Bruker ikke funnet")
-    await log_activity(admin.user_id, admin.email, "user_updated", {"user_id": user_id, "changes": list(updates.keys())})
+    if user_id == admin.user_id:
+        raise HTTPException(status_code=400, detail="Du kan ikke kaste ut deg selv")
+    res = await db.user_sessions.delete_many({"user_id": user_id})
+    await log_activity(admin.user_id, admin.email, "user_kicked",
+                       {"user_id": user_id, "sessions_revoked": res.deleted_count})
+    return {"ok": True, "revoked": res.deleted_count}
+
+
+@api_router.delete("/users/{user_id}")
+async def delete_user(user_id: str, admin: User = Depends(require_admin)):
+    target = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+    if not target:
+        raise HTTPException(status_code=404, detail="Bruker ikke funnet")
+    if user_id == admin.user_id:
+        raise HTTPException(status_code=400, detail="Du kan ikke slette din egen konto")
+    await db.user_sessions.delete_many({"user_id": user_id})
+    await db.users.delete_one({"user_id": user_id})
+    await log_activity(admin.user_id, admin.email, "user_deleted", {"user_id": user_id, "email": target.get("email")})
     return {"ok": True}
 
 

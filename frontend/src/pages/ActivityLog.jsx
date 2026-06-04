@@ -10,6 +10,8 @@ const ACTION_LABELS = {
   export_csv: "CSV eksport",
   export_xlsx: "Excel eksport",
   user_updated: "Bruker endret",
+  user_kicked: "Bruker kastet ut",
+  user_deleted: "Bruker slettet",
 };
 
 export default function ActivityLog() {

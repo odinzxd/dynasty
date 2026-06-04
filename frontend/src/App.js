@@ -10,6 +10,7 @@ import NewSale from "@/pages/NewSale";
 import MySales from "@/pages/MySales";
 import AdminPanel from "@/pages/AdminPanel";
 import ActivityLog from "@/pages/ActivityLog";
+import Employees from "@/pages/Employees";
 import Layout from "@/components/Layout";
 import ProtectedRoute from "@/components/ProtectedRoute";
 
@@ -29,6 +30,7 @@ function AppRouter() {
         <Route path="/sales/new" element={<NewSale />} />
         <Route path="/sales" element={<MySales />} />
         <Route path="/admin" element={<ProtectedRoute adminOnly><AdminPanel /></ProtectedRoute>} />
+        <Route path="/admin/employees" element={<ProtectedRoute adminOnly><Employees /></ProtectedRoute>} />
         <Route path="/admin/activity" element={<ProtectedRoute adminOnly><ActivityLog /></ProtectedRoute>} />
       </Route>
       <Route path="*" element={<Navigate to="/dashboard" replace />} />

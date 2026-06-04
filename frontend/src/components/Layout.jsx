@@ -1,7 +1,7 @@
 import React from "react";
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
-import { LayoutDashboard, FilePlus2, ListChecks, Shield, LogOut, ScrollText } from "lucide-react";
+import { LayoutDashboard, FilePlus2, ListChecks, Shield, LogOut, ScrollText, Users } from "lucide-react";
 
 function NavItem({ to, icon: Icon, label, testId }) {
   return (
@@ -50,6 +50,7 @@ export default function Layout() {
             <>
               <div className="mt-6 px-4 label-eyebrow">Admin</div>
               <NavItem to="/admin" icon={Shield} label="Adminpanel" testId="nav-admin" />
+              <NavItem to="/admin/employees" icon={Users} label="Ansatte" testId="nav-employees" />
               <NavItem to="/admin/activity" icon={ScrollText} label="Aktivitetslogg" testId="nav-activity" />
             </>
           )}
