@@ -424,18 +424,17 @@ async def delete_sale(sale_id: str, user: User = Depends(require_admin)):
 # =============== Stats ===============
 @api_router.get("/stats/dashboard")
 async def stats_dashboard(user: User = Depends(get_current_user)):
-    """Stats for current employee."""
-    now = datetime.now(timezone.utc)
-    month_start = now.replace(day=1).strftime("%Y-%m-%d")
-    q = {"employee_id": user.user_id, "sale_date": {"$gte": month_start}}
+    """Stats for current employee — today."""
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    q = {"employee_id": user.user_id, "sale_date": today}
     docs = await db.sales.find(q, {"_id": 0}).to_list(2000)
     total_revenue = sum(d.get("total_price", 0) for d in docs if d.get("status") != "kansellert")
     count = len([d for d in docs if d.get("status") != "kansellert"])
     # Recent sales (last 5)
     recent = await db.sales.find({"employee_id": user.user_id}, {"_id": 0}).sort("created_at", -1).limit(5).to_list(5)
     return {
-        "month_revenue": total_revenue,
-        "month_count": count,
+        "day_revenue": total_revenue,
+        "day_count": count,
         "recent_sales": [Sale(**d).model_dump(mode="json") for d in recent],
     }
 
@@ -464,22 +463,22 @@ async def stats_admin(user: User = Depends(require_admin)):
         per_zone[z]["revenue"] += d.get("total_price", 0)
         per_zone[z]["count"] += 1
 
-    # Per month (last 6 months)
-    per_month = {}
+    # Per day (last 30 days)
+    per_day = {}
     for d in active:
         sd = d.get("sale_date", "")
-        if len(sd) >= 7:
-            ym = sd[:7]
-            per_month.setdefault(ym, {"month": ym, "revenue": 0, "count": 0})
-            per_month[ym]["revenue"] += d.get("total_price", 0)
-            per_month[ym]["count"] += 1
+        if len(sd) >= 10:
+            day = sd[:10]
+            per_day.setdefault(day, {"day": day, "revenue": 0, "count": 0})
+            per_day[day]["revenue"] += d.get("total_price", 0)
+            per_day[day]["count"] += 1
 
     return {
         "total_revenue": total_revenue,
         "total_count": total_count,
         "per_employee": sorted(per_emp.values(), key=lambda x: -x["revenue"]),
         "per_zone": sorted(per_zone.values(), key=lambda x: -x["revenue"]),
-        "per_month": sorted(per_month.values(), key=lambda x: x["month"]),
+        "per_day": sorted(per_day.values(), key=lambda x: x["day"])[-30:],
     }
 
 

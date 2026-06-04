@@ -25,7 +25,7 @@ export default function Dashboard() {
   const [data, setData] = useState(null);
 
   useEffect(() => {
-    api.get("/stats/dashboard").then(r => setData(r.data)).catch(() => setData({ month_revenue: 0, month_count: 0, recent_sales: [] }));
+    api.get("/stats/dashboard").then(r => setData(r.data)).catch(() => setData({ day_revenue: 0, day_count: 0, recent_sales: [] }));
   }, []);
 
   return (
@@ -40,7 +40,7 @@ export default function Dashboard() {
             <h1 className="font-display text-4xl sm:text-5xl font-light leading-tight">
               Hei, <span className="italic">{user?.name?.split(" ")[0]}</span>.
             </h1>
-            <p className="text-d8-textMute mt-3 max-w-lg">Her er en oversikt over dine resultater denne måneden.</p>
+            <p className="text-d8-textMute mt-3 max-w-lg">Her er en oversikt over dine resultater i dag.</p>
           </div>
           <Link
             to="/sales/new"
@@ -55,9 +55,9 @@ export default function Dashboard() {
 
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
-        <Stat label="Salg denne måned" value={data?.month_count ?? "—"} sub="aktive registreringer" icon={FileText} testId="stat-month-count" />
-        <Stat label="Omsetning denne måned" value={formatNOK(data?.month_revenue || 0)} sub="ekskl. kansellerte" icon={Wallet} testId="stat-month-revenue" />
-        <Stat label="Snittpris" value={formatNOK(data?.month_count ? (data.month_revenue / data.month_count) : 0)} sub="per salg" icon={BarChart3} testId="stat-avg" />
+        <Stat label="Salg i dag" value={data?.day_count ?? "—"} sub="aktive registreringer" icon={FileText} testId="stat-day-count" />
+        <Stat label="Omsetning i dag" value={formatNOK(data?.day_revenue || 0)} sub="ekskl. kansellerte" icon={Wallet} testId="stat-day-revenue" />
+        <Stat label="Snittpris" value={formatNOK(data?.day_count ? (data.day_revenue / data.day_count) : 0)} sub="per salg i dag" icon={BarChart3} testId="stat-avg" />
       </div>
 
       {/* Recent sales */}

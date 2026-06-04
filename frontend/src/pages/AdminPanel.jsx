@@ -85,12 +85,12 @@ export default function AdminPanel() {
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-10">
         <div className="d8-card lg:col-span-2">
-          <div className="label-eyebrow mb-4">Omsetning per måned</div>
+          <div className="label-eyebrow mb-4">Omsetning per dag</div>
           <div className="h-72">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={stats?.per_month || []}>
+              <LineChart data={stats?.per_day || []}>
                 <CartesianGrid stroke="#262626" strokeDasharray="3 3" />
-                <XAxis dataKey="month" stroke="#A3A3A3" fontSize={12} />
+                <XAxis dataKey="day" stroke="#A3A3A3" fontSize={12} />
                 <YAxis stroke="#A3A3A3" fontSize={12} tickFormatter={(v) => `${(v/1000).toFixed(0)}k`} />
                 <Tooltip contentStyle={{ background: "#141414", border: "1px solid #262626", color: "#fff" }} formatter={(v) => formatNOK(v)} />
                 <Line type="monotone" dataKey="revenue" stroke="#D32F2F" strokeWidth={2} dot={{ fill: "#D32F2F" }} />
