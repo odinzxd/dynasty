@@ -92,9 +92,9 @@ export default function Employees() {
                 <tr key={u.user_id} className="border-b border-neutral-100 hover:bg-neutral-50" data-testid={`user-row-${u.user_id}`}>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3">
-                      {u.picture
-                        ? <img src={u.picture} alt="" className="w-8 h-8 object-cover" />
-                        : <div className="w-8 h-8 bg-neutral-200 flex items-center justify-center text-xs">{u.name?.[0]?.toUpperCase()}</div>}
+                      <div className="w-8 h-8 bg-neutral-200 flex items-center justify-center text-xs">
+                        {u.name?.[0]?.toUpperCase() || "?"}
+                      </div>
                       <span className="font-medium">{u.name}{self && <span className="text-d8-red text-[10px] ml-2 uppercase tracking-wider">deg</span>}</span>
                     </div>
                   </td>
