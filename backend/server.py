@@ -1,6 +1,7 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Depends
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.concurrency import run_in_threadpool
+from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 import os
@@ -19,6 +20,7 @@ from datetime import datetime, timezone, timedelta
 from openpyxl import Workbook
 
 ROOT_DIR = Path(__file__).parent
+FRONTEND_BUILD_DIR = ROOT_DIR.parent / "frontend" / "build"
 load_dotenv(ROOT_DIR / '.env')
 
 DATABASE_URL = os.environ.get('DATABASE_URL', str(ROOT_DIR / 'database.sqlite'))
@@ -765,6 +767,23 @@ async def root():
 
 
 app.include_router(api_router)
+
+if FRONTEND_BUILD_DIR.exists():
+    static_dir = FRONTEND_BUILD_DIR / "static"
+    if static_dir.exists():
+        app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def serve_frontend(full_path: str):
+        if full_path.startswith("api/"):
+            raise HTTPException(status_code=404, detail="Not Found")
+
+        requested_path = (FRONTEND_BUILD_DIR / full_path).resolve()
+        build_root = FRONTEND_BUILD_DIR.resolve()
+        if requested_path.is_file() and build_root in requested_path.parents:
+            return FileResponse(requested_path)
+
+        return FileResponse(FRONTEND_BUILD_DIR / "index.html")
 
 app.add_middleware(
     CORSMiddleware,
