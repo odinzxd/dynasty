@@ -44,8 +44,8 @@ def test_price_calculator_27810():
 
 
 # ---------- Auth ----------
-def test_auth_session_required():
-    r = requests.post(f"{API}/auth/session", json={})
+def test_auth_login_required():
+    r = requests.post(f"{API}/auth/login", json={})
     assert r.status_code == 400
 
 

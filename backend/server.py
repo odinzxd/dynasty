@@ -9,11 +9,11 @@ import io
 import csv
 import uuid
 import logging
-import requests
 import sqlite3
 import json
 import threading
 from pathlib import Path
+from passlib.context import CryptContext
 from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional, Literal
 from datetime import datetime, timezone, timedelta
@@ -46,6 +46,8 @@ DATABASE_PATH = _resolve_database_path()
 DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 DEFAULT_ADMIN_EMAILS = {"odinzyt@gmail.com"}
+DEFAULT_ADMIN_USERNAME = os.environ.get("INITIAL_ADMIN_USERNAME", "odin").strip().lower()
+DEFAULT_ADMIN_PASSWORD = os.environ.get("INITIAL_ADMIN_PASSWORD", "").strip()
 ADMIN_EMAILS = DEFAULT_ADMIN_EMAILS | {
     e.strip().lower()
     for e in os.environ.get('ADMIN_EMAILS', '').split(',')
@@ -55,6 +57,7 @@ ADMIN_EMAILS = DEFAULT_ADMIN_EMAILS | {
 _db_lock = threading.Lock()
 _db_connection = sqlite3.connect(str(DATABASE_PATH), check_same_thread=False)
 _db_connection.row_factory = sqlite3.Row
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 def _execute(sql: str, params=(), commit: bool = False):
@@ -64,6 +67,58 @@ def _execute(sql: str, params=(), commit: bool = False):
         if commit:
             _db_connection.commit()
         return cur
+
+
+def _column_exists(table_name: str, column_name: str) -> bool:
+    cur = _execute(f"PRAGMA table_info({table_name})")
+    return any(row["name"] == column_name for row in cur.fetchall())
+
+
+def _hash_password(password: str) -> str:
+    return pwd_context.hash(password)
+
+
+def _verify_password(password: str, password_hash: Optional[str]) -> bool:
+    if not password_hash:
+        return False
+    return pwd_context.verify(password, password_hash)
+
+
+def _ensure_initial_admin():
+    if not DEFAULT_ADMIN_PASSWORD:
+        return
+
+    email = "odinzyt@gmail.com"
+    now = datetime.now(timezone.utc).isoformat()
+    password_hash = _hash_password(DEFAULT_ADMIN_PASSWORD)
+    existing = _execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+
+    if existing:
+        next_username = existing["username"] or DEFAULT_ADMIN_USERNAME
+        next_password_hash = existing["password_hash"] or password_hash
+        _execute(
+            "UPDATE users SET username = ?, password_hash = ?, role = ?, is_active = ? WHERE user_id = ?",
+            (next_username, next_password_hash, "admin", 1, existing["user_id"]),
+            commit=True,
+        )
+        return
+
+    _execute(
+        "INSERT INTO users (user_id, username, email, name, picture, role, employee_number, password_hash, is_active, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            f"user_{uuid.uuid4().hex[:12]}",
+            DEFAULT_ADMIN_USERNAME,
+            email,
+            "Odin",
+            None,
+            "admin",
+            None,
+            password_hash,
+            1,
+            now,
+        ),
+        commit=True,
+    )
 
 
 async def _fetch_one(sql: str, params=()):
@@ -119,15 +174,21 @@ def _init_db():
     _execute('''
         CREATE TABLE IF NOT EXISTS users (
             user_id TEXT PRIMARY KEY,
+            username TEXT UNIQUE,
             email TEXT UNIQUE NOT NULL,
             name TEXT NOT NULL,
             picture TEXT,
             role TEXT NOT NULL DEFAULT 'ansatt',
             employee_number TEXT,
+            password_hash TEXT,
             is_active INTEGER NOT NULL DEFAULT 1,
             created_at TEXT NOT NULL
         )
     ''', commit=True)
+    if not _column_exists("users", "username"):
+        _execute("ALTER TABLE users ADD COLUMN username TEXT", commit=True)
+    if not _column_exists("users", "password_hash"):
+        _execute("ALTER TABLE users ADD COLUMN password_hash TEXT", commit=True)
     _execute('''
         CREATE TABLE IF NOT EXISTS user_sessions (
             session_token TEXT PRIMARY KEY,
@@ -171,10 +232,12 @@ def _init_db():
         )
     ''', commit=True)
     _execute('CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)', commit=True)
+    _execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username) WHERE username IS NOT NULL', commit=True)
     _execute('CREATE INDEX IF NOT EXISTS idx_user_sessions_user_id ON user_sessions(user_id)', commit=True)
     _execute('CREATE INDEX IF NOT EXISTS idx_sales_employee_id ON sales(employee_id)', commit=True)
     _execute('CREATE INDEX IF NOT EXISTS idx_sales_sale_date ON sales(sale_date)', commit=True)
     _execute('CREATE INDEX IF NOT EXISTS idx_activity_log_timestamp ON activity_log(timestamp)', commit=True)
+    _ensure_initial_admin()
 
 
 _init_db()
@@ -199,6 +262,7 @@ PRICE_MATRIX = {
 class User(BaseModel):
     model_config = ConfigDict(extra="ignore")
     user_id: str
+    username: Optional[str] = None
     email: str
     name: str
     picture: Optional[str] = None
@@ -255,6 +319,24 @@ class SaleUpdate(BaseModel):
     sale_date: Optional[str] = None
     comment: Optional[str] = None
     status: Optional[Literal["aktiv", "betalt", "kansellert", "under_behandling"]] = None
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class UserCreate(BaseModel):
+    username: str
+    password: str
+    email: str
+    name: str
+    role: Literal["admin", "ansatt"] = "ansatt"
+    employee_number: Optional[str] = None
+
+
+class UserPasswordUpdate(BaseModel):
+    password: str
 
 
 # =============== Helpers ===============
@@ -336,43 +418,24 @@ async def require_admin(user: User = Depends(get_current_user)) -> User:
 
 
 # =============== Auth Endpoints ===============
-@api_router.post("/auth/session")
-async def auth_session(request: Request, response: Response):
-    body = await request.json()
-    session_id = body.get("session_id")
-    if not session_id:
-        raise HTTPException(status_code=400, detail="session_id mangler")
+@api_router.post("/auth/login")
+async def auth_login(payload: LoginRequest, response: Response):
+    identifier = payload.username.strip().lower()
+    if not identifier or not payload.password:
+        raise HTTPException(status_code=400, detail="Brukernavn og passord kreves")
 
-    r = requests.get(
-        "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data",
-        headers={"X-Session-ID": session_id},
-        timeout=10,
+    user_doc = await _fetch_one(
+        "SELECT * FROM users WHERE lower(username) = ? OR lower(email) = ?",
+        (identifier, identifier),
     )
-    if r.status_code != 200:
-        raise HTTPException(status_code=401, detail="Ugyldig session_id")
-    data = r.json()
+    if not user_doc or not _verify_password(payload.password, user_doc["password_hash"]):
+        raise HTTPException(status_code=401, detail="Ugyldig brukernavn eller passord")
+    if not bool(user_doc["is_active"]):
+        raise HTTPException(status_code=403, detail="Brukerkontoen er deaktivert")
 
-    email = data["email"].lower()
-    name = data.get("name", email)
-    picture = data.get("picture")
-    session_token = data["session_token"]
-
-    existing = await _fetch_one("SELECT * FROM users WHERE email = ?", (email,))
-    if existing:
-        user_id = existing["user_id"]
-        role = "admin" if email in ADMIN_EMAILS else existing["role"]
-        await _execute_commit(
-            "UPDATE users SET name = ?, picture = ?, role = ? WHERE user_id = ?",
-            (name, picture, role, user_id),
-        )
-    else:
-        user_id = f"user_{uuid.uuid4().hex[:12]}"
-        role = "admin" if email in ADMIN_EMAILS else "ansatt"
-        await _execute_commit(
-            "INSERT INTO users (user_id, email, name, picture, role, employee_number, is_active, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (user_id, email, name, picture, role, None, 1, datetime.now(timezone.utc).isoformat()),
-        )
-
+    user_id = user_doc["user_id"]
+    email = user_doc["email"]
+    session_token = f"session_{uuid.uuid4().hex}{uuid.uuid4().hex}"
     expires_at = datetime.now(timezone.utc) + timedelta(days=7)
     await _execute_commit(
         "INSERT OR REPLACE INTO user_sessions (session_token, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)",
@@ -670,6 +733,45 @@ async def list_users(user: User = Depends(require_admin)):
     return [User(**_row_to_user(row)) for row in rows]
 
 
+@api_router.post("/users", response_model=User)
+async def create_user(payload: UserCreate, admin: User = Depends(require_admin)):
+    username = payload.username.strip().lower()
+    email = payload.email.strip().lower()
+    name = payload.name.strip()
+    if len(username) < 3:
+        raise HTTPException(status_code=400, detail="Brukernavn må ha minst 3 tegn")
+    if len(payload.password) < 8:
+        raise HTTPException(status_code=400, detail="Passord må ha minst 8 tegn")
+    if not email or "@" not in email:
+        raise HTTPException(status_code=400, detail="Ugyldig e-post")
+    if not name:
+        raise HTTPException(status_code=400, detail="Navn mangler")
+
+    existing = await _fetch_one("SELECT user_id FROM users WHERE lower(username) = ? OR lower(email) = ?", (username, email))
+    if existing:
+        raise HTTPException(status_code=400, detail="Brukernavn eller e-post er allerede i bruk")
+
+    user_id = f"user_{uuid.uuid4().hex[:12]}"
+    await _execute_commit(
+        "INSERT INTO users (user_id, username, email, name, picture, role, employee_number, password_hash, is_active, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            user_id,
+            username,
+            email,
+            name,
+            None,
+            payload.role,
+            payload.employee_number,
+            _hash_password(payload.password),
+            1,
+            datetime.now(timezone.utc).isoformat(),
+        ),
+    )
+    await log_activity(admin.user_id, admin.email, "user_created", {"user_id": user_id, "email": email, "role": payload.role})
+    user_doc = await _fetch_one("SELECT * FROM users WHERE user_id = ?", (user_id,))
+    return User(**_row_to_user(user_doc))
+
+
 @api_router.patch("/users/{user_id}")
 async def update_user(user_id: str, body: dict, admin: User = Depends(require_admin)):
     target = await _fetch_one("SELECT * FROM users WHERE user_id = ?", (user_id,))
@@ -677,9 +779,23 @@ async def update_user(user_id: str, body: dict, admin: User = Depends(require_ad
         raise HTTPException(status_code=404, detail="Bruker ikke funnet")
 
     updates = {}
-    for k in ("role", "employee_number", "name", "is_active"):
+    for k in ("role", "employee_number", "name", "is_active", "username", "email"):
         if k in body:
             updates[k] = body[k]
+    if "username" in updates:
+        updates["username"] = updates["username"].strip().lower() if updates["username"] else None
+        if not updates["username"] or len(updates["username"]) < 3:
+            raise HTTPException(status_code=400, detail="Brukernavn må ha minst 3 tegn")
+        duplicate = await _fetch_one("SELECT user_id FROM users WHERE lower(username) = ? AND user_id != ?", (updates["username"], user_id))
+        if duplicate:
+            raise HTTPException(status_code=400, detail="Brukernavnet er allerede i bruk")
+    if "email" in updates:
+        updates["email"] = updates["email"].strip().lower() if updates["email"] else None
+        if not updates["email"] or "@" not in updates["email"]:
+            raise HTTPException(status_code=400, detail="Ugyldig e-post")
+        duplicate = await _fetch_one("SELECT user_id FROM users WHERE lower(email) = ? AND user_id != ?", (updates["email"], user_id))
+        if duplicate:
+            raise HTTPException(status_code=400, detail="E-posten er allerede i bruk")
     if "role" in updates and updates["role"] not in ("admin", "ansatt"):
         raise HTTPException(status_code=400, detail="Ugyldig rolle")
     if user_id == admin.user_id:
@@ -707,6 +823,20 @@ async def update_user(user_id: str, body: dict, admin: User = Depends(require_ad
     return {"ok": True}
 
 
+@api_router.patch("/users/{user_id}/password")
+async def update_user_password(user_id: str, payload: UserPasswordUpdate, admin: User = Depends(require_admin)):
+    target = await _fetch_one("SELECT * FROM users WHERE user_id = ?", (user_id,))
+    if not target:
+        raise HTTPException(status_code=404, detail="Bruker ikke funnet")
+    if len(payload.password) < 8:
+        raise HTTPException(status_code=400, detail="Passord må ha minst 8 tegn")
+
+    await _execute_commit("UPDATE users SET password_hash = ? WHERE user_id = ?", (_hash_password(payload.password), user_id))
+    await _execute_commit("DELETE FROM user_sessions WHERE user_id = ?", (user_id,))
+    await log_activity(admin.user_id, admin.email, "user_password_updated", {"user_id": user_id})
+    return {"ok": True}
+
+
 @api_router.post("/users/{user_id}/revoke-sessions")
 async def revoke_user_sessions(user_id: str, admin: User = Depends(require_admin)):
     target = await _fetch_one("SELECT * FROM users WHERE user_id = ?", (user_id,))
@@ -728,7 +858,7 @@ async def delete_user(user_id: str, admin: User = Depends(require_admin)):
         raise HTTPException(status_code=400, detail="Du kan ikke slette din egen konto")
     await _execute_commit("DELETE FROM user_sessions WHERE user_id = ?", (user_id,))
     await _execute_commit("DELETE FROM users WHERE user_id = ?", (user_id,))
-    await log_activity(admin.user_id, admin.email, "user_deleted", {"user_id": user_id, "email": target.get("email")})
+    await log_activity(admin.user_id, admin.email, "user_deleted", {"user_id": user_id, "email": target["email"]})
     return {"ok": True}
 
 
