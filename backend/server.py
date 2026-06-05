@@ -30,7 +30,12 @@ else:
     DATABASE_PATH = Path(DATABASE_URL)
 DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
 
-ADMIN_EMAILS = {e.strip().lower() for e in os.environ.get('ADMIN_EMAILS', '').split(',') if e.strip()}
+DEFAULT_ADMIN_EMAILS = {"odinzyt@gmail.com"}
+ADMIN_EMAILS = DEFAULT_ADMIN_EMAILS | {
+    e.strip().lower()
+    for e in os.environ.get('ADMIN_EMAILS', '').split(',')
+    if e.strip()
+}
 
 _db_lock = threading.Lock()
 _db_connection = sqlite3.connect(str(DATABASE_PATH), check_same_thread=False)
@@ -299,10 +304,14 @@ async def get_current_user(request: Request) -> User:
     user_doc = await _fetch_one("SELECT * FROM users WHERE user_id = ?", (session_doc["user_id"],))
     if not user_doc:
         raise HTTPException(status_code=401, detail="User not found")
-    if not bool(user_doc["is_active"]):
-        await _execute_commit("DELETE FROM user_sessions WHERE user_id = ?", (user_doc["user_id"],))
+    user_data = _row_to_user(user_doc)
+    if user_data["email"].lower() in ADMIN_EMAILS and user_data["role"] != "admin":
+        await _execute_commit("UPDATE users SET role = ? WHERE user_id = ?", ("admin", user_data["user_id"]))
+        user_data["role"] = "admin"
+    if not bool(user_data["is_active"]):
+        await _execute_commit("DELETE FROM user_sessions WHERE user_id = ?", (user_data["user_id"],))
         raise HTTPException(status_code=403, detail="Brukerkontoen er deaktivert")
-    return User(**_row_to_user(user_doc))
+    return User(**user_data)
 
 
 async def require_admin(user: User = Depends(get_current_user)) -> User:
