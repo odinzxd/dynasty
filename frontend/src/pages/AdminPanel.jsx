@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo } from "react";
 import { api, API, formatNOK, formatDate, STATUS_LABELS, STATUS_COLORS } from "@/lib/api";
 import { toast } from "sonner";
-import { Download, FileSpreadsheet, Pencil, Trash2, X } from "lucide-react";
+import { Database, Download, FileSpreadsheet, Pencil, Trash2, X } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
   LineChart, Line, PieChart, Pie, Cell, Legend
@@ -20,23 +20,43 @@ function StatTile({ label, value, sub }) {
   );
 }
 
+function DatabaseStatus({ status }) {
+  const ok = status?.ok === true;
+  const checked = status !== null;
+  const tone = !checked
+    ? "border-neutral-300 text-neutral-500 bg-neutral-100"
+    : ok
+      ? "border-emerald-500/40 text-emerald-300 bg-emerald-500/10"
+      : "border-d8-red/50 text-d8-red bg-d8-red/10";
+  return (
+    <div className={`inline-flex items-center gap-2 border px-3 py-2 text-sm ${tone}`}>
+      <span className={`h-2.5 w-2.5 rounded-full ${!checked ? "bg-neutral-400" : ok ? "bg-emerald-400" : "bg-d8-red"}`} />
+      <Database size={15} />
+      <span>{checked ? (ok ? "Database oppe" : "Database feil") : "Sjekker database"}</span>
+    </div>
+  );
+}
+
 export default function AdminPanel() {
   const [stats, setStats] = useState(null);
   const [sales, setSales] = useState([]);
   const [users, setUsers] = useState([]);
   const [matrix, setMatrix] = useState(null);
+  const [databaseStatus, setDatabaseStatus] = useState(null);
   const [editSale, setEditSale] = useState(null);
 
   const [filters, setFilters] = useState({ zone: "", package: "", status: "", employee_id: "", date_from: "", date_to: "" });
 
   const loadAll = async () => {
-    const [s, sa, u, m] = await Promise.all([
+    const [s, sa, u, m, db] = await Promise.all([
       api.get("/stats/admin"),
       api.get("/sales", { params: { ...cleanFilters(filters) } }),
       api.get("/users"),
       api.get("/price-matrix"),
+      api.get("/system/database").catch(e => ({ data: { ok: false, error: e?.response?.data?.detail || "Kunne ikke sjekke database" } })),
     ]);
     setStats(s.data); setSales(sa.data); setUsers(u.data); setMatrix(m.data);
+    setDatabaseStatus(db.data);
   };
 
   useEffect(() => { loadAll(); /* eslint-disable-next-line */ }, []);
@@ -64,7 +84,8 @@ export default function AdminPanel() {
           <div className="label-eyebrow text-d8-red mb-2">Adminpanel</div>
           <h1 className="font-display text-4xl font-light">Ledelsens kontrollrom</h1>
         </div>
-        <div className="flex gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <DatabaseStatus status={databaseStatus} />
           <button onClick={() => exportFile("csv")} data-testid="export-csv" className="inline-flex items-center gap-2 border border-d8-line hover:border-d8-red px-4 py-2 text-sm transition-colors">
             <Download size={14} /> CSV
           </button>

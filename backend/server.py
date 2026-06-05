@@ -643,6 +643,26 @@ async def stats_admin(user: User = Depends(require_admin)):
     }
 
 
+@api_router.get("/system/database")
+async def database_status(user: User = Depends(require_admin)):
+    try:
+        row = await _fetch_one("SELECT 1 AS ok", ())
+        return {
+            "ok": bool(row and row["ok"] == 1),
+            "database_path": str(DATABASE_PATH),
+            "persistent_storage": str(DATABASE_PATH).startswith("/data/"),
+            "error": None,
+        }
+    except Exception as exc:
+        logger.exception("Database health check failed")
+        return {
+            "ok": False,
+            "database_path": str(DATABASE_PATH),
+            "persistent_storage": str(DATABASE_PATH).startswith("/data/"),
+            "error": str(exc),
+        }
+
+
 # =============== Users (admin) ===============
 @api_router.get("/users", response_model=List[User])
 async def list_users(user: User = Depends(require_admin)):
