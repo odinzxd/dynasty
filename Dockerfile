@@ -17,4 +17,6 @@ COPY backend ./backend
 COPY --from=frontend /app/frontend/build ./frontend/build
 
 ENV PORT=8080
+ENV DATABASE_PATH=/data/database.sqlite
+RUN mkdir -p /data
 CMD ["sh", "-c", "cd backend && uvicorn server:app --host 0.0.0.0 --port ${PORT:-8080}"]

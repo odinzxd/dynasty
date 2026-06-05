@@ -23,11 +23,26 @@ ROOT_DIR = Path(__file__).parent
 FRONTEND_BUILD_DIR = ROOT_DIR.parent / "frontend" / "build"
 load_dotenv(ROOT_DIR / '.env')
 
-DATABASE_URL = os.environ.get('DATABASE_URL', str(ROOT_DIR / 'database.sqlite'))
-if DATABASE_URL.startswith('sqlite:///'):
-    DATABASE_PATH = Path(DATABASE_URL.replace('sqlite:///', ''))
-else:
-    DATABASE_PATH = Path(DATABASE_URL)
+
+def _resolve_database_path() -> Path:
+    database_path = os.environ.get("DATABASE_PATH")
+    if database_path:
+        return Path(database_path)
+
+    database_url = os.environ.get("DATABASE_URL")
+    if database_url:
+        if database_url.startswith("sqlite:///"):
+            return Path(database_url.replace("sqlite:///", ""))
+        return Path(database_url)
+
+    persistent_dir = Path("/data")
+    if persistent_dir.exists():
+        return persistent_dir / "database.sqlite"
+
+    return ROOT_DIR / "database.sqlite"
+
+
+DATABASE_PATH = _resolve_database_path()
 DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 DEFAULT_ADMIN_EMAILS = {"odinzyt@gmail.com"}
@@ -772,7 +787,12 @@ async def export_xlsx(user: User = Depends(require_admin)):
 # =============== Root ===============
 @api_router.get("/")
 async def root():
-    return {"app": "Dynasty 8 AS", "status": "ok"}
+    return {
+        "app": "Dynasty 8 AS",
+        "status": "ok",
+        "database_path": str(DATABASE_PATH),
+        "persistent_storage": str(DATABASE_PATH).startswith("/data/"),
+    }
 
 
 app.include_router(api_router)
