@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo } from "react";
 import { api, API, formatNOK, formatDate, STATUS_LABELS, STATUS_COLORS } from "@/lib/api";
 import { toast } from "sonner";
-import { Database, Download, FileSpreadsheet, Pencil, Trash2, X } from "lucide-react";
+import { Database, Download, FileSpreadsheet, Pencil, Plus, Trash2, X } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
   LineChart, Line, PieChart, Pie, Cell, Legend
@@ -42,20 +42,24 @@ export default function AdminPanel() {
   const [sales, setSales] = useState([]);
   const [users, setUsers] = useState([]);
   const [matrix, setMatrix] = useState(null);
+  const [products, setProducts] = useState([]);
   const [databaseStatus, setDatabaseStatus] = useState(null);
   const [editSale, setEditSale] = useState(null);
+  const [editProduct, setEditProduct] = useState(null);
 
   const [filters, setFilters] = useState({ zone: "", package: "", status: "", employee_id: "", date_from: "", date_to: "" });
 
   const loadAll = async () => {
-    const [s, sa, u, m, db] = await Promise.all([
+    const [s, sa, u, m, p, db] = await Promise.all([
       api.get("/stats/admin"),
       api.get("/sales", { params: { ...cleanFilters(filters) } }),
       api.get("/users"),
       api.get("/price-matrix"),
+      api.get("/products"),
       api.get("/system/database").catch(e => ({ data: { ok: false, error: e?.response?.data?.detail || "Kunne ikke sjekke database" } })),
     ]);
     setStats(s.data); setSales(sa.data); setUsers(u.data); setMatrix(m.data);
+    setProducts(p.data);
     setDatabaseStatus(db.data);
   };
 
@@ -150,6 +154,8 @@ export default function AdminPanel() {
         </div>
       </div>
 
+      <ProductManager products={products} onEdit={setEditProduct} onDeleted={loadAll} />
+
       {/* Filters */}
       <div className="d8-card mb-6">
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
@@ -158,8 +164,8 @@ export default function AdminPanel() {
             {(matrix?.zones || []).map(z => <option key={z} value={z}>{z}</option>)}
           </select>
           <select className={inputCls} value={filters.package} onChange={e => setFilters(f => ({ ...f, package: e.target.value }))} data-testid="filter-package">
-            <option value="">Alle pakker</option>
-            {(matrix?.packages || []).map(p => <option key={p} value={p}>{p}</option>)}
+            <option value="">Alle boligtyper</option>
+            {(matrix?.products || []).map(p => <option key={p.product_id} value={`${p.category} - ${p.name}`}>{p.category} - {p.name}</option>)}
           </select>
           <select className={inputCls} value={filters.status} onChange={e => setFilters(f => ({ ...f, status: e.target.value }))} data-testid="filter-status">
             <option value="">Alle statuser</option>
@@ -216,6 +222,7 @@ export default function AdminPanel() {
       </div>
 
       {editSale && <EditModal sale={editSale} matrix={matrix} onClose={() => setEditSale(null)} onSaved={() => { setEditSale(null); loadAll(); }} />}
+      {editProduct && <ProductModal product={editProduct === "new" ? null : editProduct} onClose={() => setEditProduct(null)} onSaved={() => { setEditProduct(null); loadAll(); }} />}
     </div>
   );
 }
@@ -224,6 +231,135 @@ function cleanFilters(f) {
   const out = {};
   for (const [k, v] of Object.entries(f)) if (v) out[k] = v;
   return out;
+}
+
+function ProductManager({ products, onEdit, onDeleted }) {
+  const remove = async (product) => {
+    if (!window.confirm(`Slette eller deaktivere ${product.category} - ${product.name}?`)) return;
+    try {
+      const r = await api.delete(`/products/${product.product_id}`);
+      toast.success(r.data.deactivated ? "Boligtype deaktivert" : "Boligtype slettet");
+      onDeleted();
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Kunne ikke fjerne boligtype");
+    }
+  };
+
+  return (
+    <div className="d8-card mb-10">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+        <div>
+          <div className="label-eyebrow mb-2">Boligtyper</div>
+          <h2 className="font-display text-2xl">Shell, IPL og MLO</h2>
+        </div>
+        <button onClick={() => onEdit("new")} className="inline-flex items-center justify-center gap-2 bg-d8-red hover:bg-d8-redHover text-white px-4 py-2 text-sm transition-colors">
+          <Plus size={15} /> Ny boligtype
+        </button>
+      </div>
+      <div className="d8-table">
+        <table className="w-full text-sm">
+          <thead className="bg-neutral-100 border-b border-neutral-200 text-left">
+            <tr>
+              <th className="px-4 py-3 font-medium">Type</th>
+              <th className="px-4 py-3 font-medium">Navn</th>
+              <th className="px-4 py-3 font-medium text-right">Pris per dag</th>
+              <th className="px-4 py-3 font-medium">Status</th>
+              <th className="px-4 py-3 font-medium text-right">Handling</th>
+            </tr>
+          </thead>
+          <tbody>
+            {products.length === 0 ? (
+              <tr><td colSpan={5} className="px-4 py-8 text-center text-neutral-500">Ingen boligtyper opprettet.</td></tr>
+            ) : products.map(product => (
+              <tr key={product.product_id} className="border-b border-neutral-100 hover:bg-neutral-50">
+                <td className="px-4 py-3">{product.category}</td>
+                <td className="px-4 py-3 font-medium">{product.name}</td>
+                <td className="px-4 py-3 text-right font-mono">{formatNOK(product.price_per_day)}</td>
+                <td className="px-4 py-3">
+                  <span className={`inline-block px-2.5 py-1 text-[11px] uppercase tracking-wider border ${product.is_active ? "border-emerald-400 text-emerald-600 bg-emerald-50" : "border-neutral-400 text-neutral-500 bg-neutral-100"}`}>
+                    {product.is_active ? "Aktiv" : "Inaktiv"}
+                  </span>
+                </td>
+                <td className="px-4 py-3 text-right">
+                  <button onClick={() => onEdit(product)} className="text-neutral-600 hover:text-d8-red p-1.5 transition-colors"><Pencil size={14} /></button>
+                  <button onClick={() => remove(product)} className="text-neutral-600 hover:text-d8-red p-1.5 transition-colors"><Trash2 size={14} /></button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function ProductModal({ product, onClose, onSaved }) {
+  const [form, setForm] = useState({
+    category: product?.category || "Shell",
+    name: product?.name || "",
+    price_per_day: product?.price_per_day || "",
+    is_active: product?.is_active ?? true,
+  });
+  const [saving, setSaving] = useState(false);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      const payload = { ...form, price_per_day: Number(form.price_per_day) || 0 };
+      if (product) {
+        await api.patch(`/products/${product.product_id}`, payload);
+        toast.success("Boligtype oppdatert");
+      } else {
+        await api.post("/products", payload);
+        toast.success("Boligtype opprettet");
+      }
+      onSaved();
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Kunne ikke lagre boligtype");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <form onSubmit={submit} className="bg-d8-surface border border-d8-line max-w-lg w-full p-8" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-start mb-6">
+          <div>
+            <div className="label-eyebrow text-d8-red mb-2">{product ? "Rediger boligtype" : "Ny boligtype"}</div>
+            <h2 className="font-display text-2xl">Pris per dag</h2>
+          </div>
+          <button type="button" onClick={onClose} className="text-d8-textMute hover:text-white"><X /></button>
+        </div>
+        <div className="space-y-5">
+          <Lbl label="Type">
+            <select className={inputCls} value={form.category} onChange={e => setForm({ ...form, category: e.target.value })}>
+              <option value="Shell">Shell</option>
+              <option value="IPL">IPL</option>
+              <option value="MLO">MLO</option>
+            </select>
+          </Lbl>
+          <Lbl label="Navn">
+            <input className={inputCls} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="f.eks. Shell Villa Stor" />
+          </Lbl>
+          <Lbl label="Pris per dag">
+            <input type="number" min="0" step="1" className={inputCls} value={form.price_per_day} onChange={e => setForm({ ...form, price_per_day: e.target.value })} />
+          </Lbl>
+          <label className="flex items-center gap-3 text-sm">
+            <input type="checkbox" checked={form.is_active} onChange={e => setForm({ ...form, is_active: e.target.checked })} />
+            Aktiv i salgskalkulatoren
+          </label>
+        </div>
+        <div className="flex justify-end gap-3 mt-8">
+          <button type="button" onClick={onClose} className="border border-d8-line px-5 py-2 text-sm hover:border-white/40">Avbryt</button>
+          <button type="submit" disabled={saving} className="bg-d8-red hover:bg-d8-redHover text-white px-5 py-2 text-sm">
+            {saving ? "Lagrer..." : "Lagre"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
 }
 
 function EditModal({ sale, matrix, onClose, onSaved }) {
@@ -237,7 +373,7 @@ function EditModal({ sale, matrix, onClose, onSaved }) {
     try {
       await api.patch(`/sales/${sale.sale_id}`, {
         customer_name: form.customer_name, phone: form.phone, address: form.address,
-        zone: form.zone, package: form.package, addons: form.addons || [],
+        zone: form.zone, product_id: form.product_id || form.package, package: form.product_id || form.package, addons: form.addons || [],
         tenant_count: Number(form.tenant_count) || 0, discount_type: form.discount_type || null,
         sale_date: form.sale_date, comment: form.comment, status: form.status,
       });
@@ -269,8 +405,8 @@ function EditModal({ sale, matrix, onClose, onSaved }) {
             </select>
           </Lbl>
           <Lbl label="Pakke">
-            <select className={inputCls} value={form.package || ""} onChange={e => set("package", e.target.value)}>
-              {(matrix?.packages || []).map(p => <option key={p} value={p}>{p}</option>)}
+            <select className={inputCls} value={form.product_id || form.package || ""} onChange={e => { set("product_id", e.target.value); set("package", e.target.value); }}>
+              {(matrix?.products || []).map(p => <option key={p.product_id} value={p.product_id}>{p.category} - {p.name}</option>)}
             </select>
           </Lbl>
           <Lbl label="Status">

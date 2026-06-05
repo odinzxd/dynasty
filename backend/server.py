@@ -121,6 +121,28 @@ def _ensure_initial_admin():
     )
 
 
+def _ensure_default_products():
+    existing = _execute("SELECT COUNT(*) AS count FROM sale_products").fetchone()
+    if existing and existing["count"] > 0:
+        return
+
+    now = datetime.now(timezone.utc).isoformat()
+    defaults = [
+        ("Shell", "Shell Standard", 5000),
+        ("Shell", "Shell Premium", 9000),
+        ("IPL", "IPL Standard", 11000),
+        ("IPL", "IPL Premium", 19000),
+        ("MLO", "MLO Standard", 15000),
+        ("MLO", "MLO Premium", 26000),
+    ]
+    for category, name, price in defaults:
+        _execute(
+            "INSERT INTO sale_products (product_id, category, name, price_per_day, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (f"product_{uuid.uuid4().hex[:12]}", category, name, price, 1, now, now),
+            commit=True,
+        )
+
+
 async def _fetch_one(sql: str, params=()):
     cur = await run_in_threadpool(_execute, sql, params, False)
     return cur.fetchone()
@@ -167,6 +189,14 @@ def _row_to_activity(row):
     data = dict(row)
     details = data.get('details')
     data['details'] = json.loads(details) if details else {}
+    return data
+
+
+def _row_to_product(row):
+    if row is None:
+        return None
+    data = dict(row)
+    data["is_active"] = bool(data.get("is_active", 1))
     return data
 
 
@@ -221,6 +251,19 @@ def _init_db():
             updated_at TEXT NOT NULL
         )
     ''', commit=True)
+    if not _column_exists("sales", "product_id"):
+        _execute("ALTER TABLE sales ADD COLUMN product_id TEXT", commit=True)
+    _execute('''
+        CREATE TABLE IF NOT EXISTS sale_products (
+            product_id TEXT PRIMARY KEY,
+            category TEXT NOT NULL,
+            name TEXT NOT NULL,
+            price_per_day REAL NOT NULL,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+    ''', commit=True)
     _execute('''
         CREATE TABLE IF NOT EXISTS activity_log (
             log_id TEXT PRIMARY KEY,
@@ -236,8 +279,11 @@ def _init_db():
     _execute('CREATE INDEX IF NOT EXISTS idx_user_sessions_user_id ON user_sessions(user_id)', commit=True)
     _execute('CREATE INDEX IF NOT EXISTS idx_sales_employee_id ON sales(employee_id)', commit=True)
     _execute('CREATE INDEX IF NOT EXISTS idx_sales_sale_date ON sales(sale_date)', commit=True)
+    _execute('CREATE INDEX IF NOT EXISTS idx_sales_product_id ON sales(product_id)', commit=True)
+    _execute('CREATE INDEX IF NOT EXISTS idx_sale_products_category ON sale_products(category)', commit=True)
     _execute('CREATE INDEX IF NOT EXISTS idx_activity_log_timestamp ON activity_log(timestamp)', commit=True)
     _ensure_initial_admin()
+    _ensure_default_products()
 
 
 _init_db()
@@ -278,6 +324,7 @@ class Sale(BaseModel):
     phone: str
     address: str
     zone: str
+    product_id: Optional[str] = None
     package: str
     addons: List[str] = []
     tenant_count: int = 0
@@ -299,6 +346,7 @@ class SaleCreate(BaseModel):
     phone: str
     address: str
     zone: str
+    product_id: Optional[str] = None
     package: str
     addons: List[str] = []
     tenant_count: int = 0
@@ -312,6 +360,7 @@ class SaleUpdate(BaseModel):
     phone: Optional[str] = None
     address: Optional[str] = None
     zone: Optional[str] = None
+    product_id: Optional[str] = None
     package: Optional[str] = None
     addons: Optional[List[str]] = None
     tenant_count: Optional[int] = None
@@ -339,11 +388,54 @@ class UserPasswordUpdate(BaseModel):
     password: str
 
 
+class SaleProduct(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    product_id: str
+    category: Literal["Shell", "IPL", "MLO"]
+    name: str
+    price_per_day: float
+    is_active: bool = True
+    created_at: str
+    updated_at: str
+
+
+class SaleProductCreate(BaseModel):
+    category: Literal["Shell", "IPL", "MLO"]
+    name: str
+    price_per_day: float
+    is_active: bool = True
+
+
+class SaleProductUpdate(BaseModel):
+    category: Optional[Literal["Shell", "IPL", "MLO"]] = None
+    name: Optional[str] = None
+    price_per_day: Optional[float] = None
+    is_active: Optional[bool] = None
+
+
 # =============== Helpers ===============
-def calculate_price(zone: str, package: str, addons: List[str], tenant_count: int, discount_type: Optional[str]):
-    if zone not in PRICE_MATRIX or package not in PRICE_MATRIX[zone]:
-        raise HTTPException(status_code=400, detail="Ugyldig sone eller pakke")
-    base = PRICE_MATRIX[zone][package]
+async def _get_product(product_id_or_name: Optional[str], include_inactive: bool = False):
+    if not product_id_or_name:
+        return None
+    normalized = product_id_or_name.strip()
+    if " - " in normalized:
+        normalized = normalized.split(" - ", 1)[1].strip()
+    if include_inactive:
+        return await _fetch_one(
+            "SELECT * FROM sale_products WHERE product_id = ? OR name = ? OR category = ? ORDER BY category, name LIMIT 1",
+            (product_id_or_name, normalized, normalized),
+        )
+    return await _fetch_one(
+        "SELECT * FROM sale_products WHERE (product_id = ? OR name = ? OR category = ?) AND is_active = 1 ORDER BY category, name LIMIT 1",
+        (product_id_or_name, normalized, normalized),
+    )
+
+
+async def calculate_price(product_id_or_name: str, addons: List[str], tenant_count: int, discount_type: Optional[str]):
+    product = await _get_product(product_id_or_name)
+    if not product:
+        raise HTTPException(status_code=400, detail="Ugyldig eller deaktivert boligtype")
+    base = float(product["price_per_day"])
     subtotal = float(base)
     if "garasje" in addons:
         subtotal += base * 0.10
@@ -361,7 +453,7 @@ def calculate_price(zone: str, package: str, addons: List[str], tenant_count: in
     elif discount_type == "ansatt":
         pct = 20
     total = subtotal * (1 - pct / 100.0)
-    return float(base), round(total, 2), pct
+    return float(base), round(total, 2), pct, _row_to_product(product)
 
 
 async def log_activity(user_id: str, user_email: str, action: str, details: Optional[dict] = None):
@@ -484,10 +576,15 @@ async def auth_logout(request: Request, response: Response):
 # =============== Price Matrix Endpoint ===============
 @api_router.get("/price-matrix")
 async def get_price_matrix():
+    products = [_row_to_product(row) for row in await _fetch_all("SELECT * FROM sale_products ORDER BY category, name", ())]
+    active_products = [p for p in products if p["is_active"]]
     return {
         "zones": ZONES,
         "packages": PACKAGES,
         "matrix": PRICE_MATRIX,
+        "product_categories": ["Shell", "IPL", "MLO"],
+        "products": products,
+        "active_products": active_products,
         "addons": {
             "garasje": {"label": "Garasje", "type": "percent", "value": 10},
             "hage": {"label": "Hage", "type": "percent", "value": 5},
@@ -504,19 +601,19 @@ async def get_price_matrix():
 
 @api_router.post("/price-calculator")
 async def price_calculator(body: dict):
-    zone = body.get("zone")
-    pkg = body.get("package")
+    product_id = body.get("product_id") or body.get("package")
     addons = body.get("addons", [])
     tenant_count = int(body.get("tenant_count") or 0)
     discount_type = body.get("discount_type")
-    base, total, pct = calculate_price(zone, pkg, addons, tenant_count, discount_type)
-    return {"base_price": base, "total_price": total, "discount_percent": pct}
+    base, total, pct, product = await calculate_price(product_id, addons, tenant_count, discount_type)
+    return {"base_price": base, "total_price": total, "discount_percent": pct, "product": product}
 
 
 # =============== Sales Endpoints ===============
 @api_router.post("/sales", response_model=Sale)
 async def create_sale(payload: SaleCreate, user: User = Depends(get_current_user)):
-    base, total, pct = calculate_price(payload.zone, payload.package, payload.addons, payload.tenant_count, payload.discount_type)
+    product_key = payload.product_id or payload.package
+    base, total, pct, product = await calculate_price(product_key, payload.addons, payload.tenant_count, payload.discount_type)
     now = datetime.now(timezone.utc).isoformat()
     sale = {
         "sale_id": f"sale_{uuid.uuid4().hex[:12]}",
@@ -524,7 +621,8 @@ async def create_sale(payload: SaleCreate, user: User = Depends(get_current_user
         "phone": payload.phone,
         "address": payload.address,
         "zone": payload.zone,
-        "package": payload.package,
+        "product_id": product["product_id"],
+        "package": f'{product["category"]} - {product["name"]}',
         "addons": payload.addons,
         "tenant_count": payload.tenant_count,
         "discount_type": payload.discount_type,
@@ -541,9 +639,9 @@ async def create_sale(payload: SaleCreate, user: User = Depends(get_current_user
         "updated_at": now,
     }
     await _execute_commit(
-        "INSERT INTO sales (sale_id, customer_name, phone, address, zone, package, addons, tenant_count, discount_type, discount_percent, base_price, total_price, sale_date, employee_id, employee_name, employee_email, comment, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO sales (sale_id, customer_name, phone, address, zone, product_id, package, addons, tenant_count, discount_type, discount_percent, base_price, total_price, sale_date, employee_id, employee_name, employee_email, comment, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
-            sale["sale_id"], sale["customer_name"], sale["phone"], sale["address"], sale["zone"], sale["package"], _json_dump(sale["addons"]), sale["tenant_count"], sale["discount_type"], sale["discount_percent"], sale["base_price"], sale["total_price"], sale["sale_date"], sale["employee_id"], sale["employee_name"], sale["employee_email"], sale["comment"], sale["status"], sale["created_at"], sale["updated_at"],
+            sale["sale_id"], sale["customer_name"], sale["phone"], sale["address"], sale["zone"], sale["product_id"], sale["package"], _json_dump(sale["addons"]), sale["tenant_count"], sale["discount_type"], sale["discount_percent"], sale["base_price"], sale["total_price"], sale["sale_date"], sale["employee_id"], sale["employee_name"], sale["employee_email"], sale["comment"], sale["status"], sale["created_at"], sale["updated_at"],
         ),
     )
     await log_activity(user.user_id, user.email, "sale_created",
@@ -619,11 +717,14 @@ async def update_sale(sale_id: str, payload: SaleUpdate, user: User = Depends(re
     existing = _row_to_sale(doc)
     updates = payload.model_dump(exclude_unset=True)
     merged = {**existing, **updates}
-    if any(k in updates for k in ["zone", "package", "addons", "tenant_count", "discount_type"]):
-        base, total, pct = calculate_price(
-            merged["zone"], merged["package"], merged.get("addons", []),
+    if any(k in updates for k in ["product_id", "package", "addons", "tenant_count", "discount_type"]):
+        product_key = merged.get("product_id") or merged.get("package")
+        base, total, pct, product = await calculate_price(
+            product_key, merged.get("addons", []),
             int(merged.get("tenant_count") or 0), merged.get("discount_type"),
         )
+        merged["product_id"] = product["product_id"]
+        merged["package"] = f'{product["category"]} - {product["name"]}'
         merged["base_price"] = base
         merged["total_price"] = total
         merged["discount_percent"] = pct
@@ -724,6 +825,79 @@ async def database_status(user: User = Depends(require_admin)):
             "persistent_storage": str(DATABASE_PATH).startswith("/data/"),
             "error": str(exc),
         }
+
+
+@api_router.get("/products", response_model=List[SaleProduct])
+async def list_products(user: User = Depends(require_admin)):
+    rows = await _fetch_all("SELECT * FROM sale_products ORDER BY category, name", ())
+    return [SaleProduct(**_row_to_product(row)) for row in rows]
+
+
+@api_router.post("/products", response_model=SaleProduct)
+async def create_product(payload: SaleProductCreate, user: User = Depends(require_admin)):
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Navn mangler")
+    if payload.price_per_day <= 0:
+        raise HTTPException(status_code=400, detail="Pris per dag må være større enn 0")
+
+    now = datetime.now(timezone.utc).isoformat()
+    product_id = f"product_{uuid.uuid4().hex[:12]}"
+    await _execute_commit(
+        "INSERT INTO sale_products (product_id, category, name, price_per_day, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (product_id, payload.category, name, float(payload.price_per_day), 1 if payload.is_active else 0, now, now),
+    )
+    await log_activity(user.user_id, user.email, "product_created", {"product_id": product_id, "category": payload.category, "name": name})
+    row = await _fetch_one("SELECT * FROM sale_products WHERE product_id = ?", (product_id,))
+    return SaleProduct(**_row_to_product(row))
+
+
+@api_router.patch("/products/{product_id}", response_model=SaleProduct)
+async def update_product(product_id: str, payload: SaleProductUpdate, user: User = Depends(require_admin)):
+    existing = await _fetch_one("SELECT * FROM sale_products WHERE product_id = ?", (product_id,))
+    if not existing:
+        raise HTTPException(status_code=404, detail="Boligtype ikke funnet")
+
+    updates = payload.model_dump(exclude_unset=True)
+    if "name" in updates:
+        updates["name"] = updates["name"].strip()
+        if not updates["name"]:
+            raise HTTPException(status_code=400, detail="Navn mangler")
+    if "price_per_day" in updates and updates["price_per_day"] <= 0:
+        raise HTTPException(status_code=400, detail="Pris per dag må være større enn 0")
+    if "is_active" in updates:
+        updates["is_active"] = 1 if updates["is_active"] else 0
+    if not updates:
+        raise HTTPException(status_code=400, detail="Ingen felter å oppdatere")
+
+    updates["updated_at"] = datetime.now(timezone.utc).isoformat()
+    fields = []
+    params = []
+    for key, value in updates.items():
+        fields.append(f"{key} = ?")
+        params.append(value)
+    params.append(product_id)
+    await _execute_commit(f"UPDATE sale_products SET {', '.join(fields)} WHERE product_id = ?", tuple(params))
+    await log_activity(user.user_id, user.email, "product_updated", {"product_id": product_id, "changes": list(updates.keys())})
+    row = await _fetch_one("SELECT * FROM sale_products WHERE product_id = ?", (product_id,))
+    return SaleProduct(**_row_to_product(row))
+
+
+@api_router.delete("/products/{product_id}")
+async def delete_product(product_id: str, user: User = Depends(require_admin)):
+    existing = await _fetch_one("SELECT * FROM sale_products WHERE product_id = ?", (product_id,))
+    if not existing:
+        raise HTTPException(status_code=404, detail="Boligtype ikke funnet")
+
+    used = await _fetch_one("SELECT COUNT(*) AS count FROM sales WHERE product_id = ?", (product_id,))
+    if used and used["count"] > 0:
+        await _execute_commit("UPDATE sale_products SET is_active = 0, updated_at = ? WHERE product_id = ?", (datetime.now(timezone.utc).isoformat(), product_id))
+        await log_activity(user.user_id, user.email, "product_deactivated", {"product_id": product_id, "reason": "used_in_sales"})
+        return {"ok": True, "deactivated": True}
+
+    await _execute_commit("DELETE FROM sale_products WHERE product_id = ?", (product_id,))
+    await log_activity(user.user_id, user.email, "product_deleted", {"product_id": product_id})
+    return {"ok": True, "deleted": True}
 
 
 # =============== Users (admin) ===============

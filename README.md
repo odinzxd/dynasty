@@ -44,3 +44,15 @@ email: odinzyt@gmail.com
 
 After logging in, admins can create users and reset passwords from the
 `Ansatte` page.
+
+## Sales products
+
+Admins manage sale products from the admin panel. Each product has:
+
+- type: `Shell`, `IPL`, or `MLO`
+- name
+- price per day
+- active/inactive status
+
+Employees select one of the active products in the sale calculator. The product
+price per day is used as the base price for the sale.

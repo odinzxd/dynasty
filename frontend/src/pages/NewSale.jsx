@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, formatNOK } from "@/lib/api";
 import { toast } from "sonner";
@@ -9,7 +9,7 @@ const initial = {
   phone: "",
   address: "",
   zone: "",
-  package: "",
+  product_id: "",
   addons: [],
   tenant_count: 0,
   discount_type: "",
@@ -31,25 +31,33 @@ export default function NewSale() {
   const navigate = useNavigate();
   const [matrix, setMatrix] = useState(null);
   const [form, setForm] = useState(initial);
-  const [calc, setCalc] = useState({ base_price: 0, total_price: 0, discount_percent: 0 });
+  const [calc, setCalc] = useState({ base_price: 0, total_price: 0, discount_percent: 0, product: null });
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => { api.get("/price-matrix").then(r => setMatrix(r.data)); }, []);
 
-  // Auto-calc whenever pricing inputs change
   useEffect(() => {
-    if (!form.zone || !form.package) { setCalc({ base_price: 0, total_price: 0, discount_percent: 0 }); return; }
+    if (!form.zone || !form.product_id) {
+      setCalc({ base_price: 0, total_price: 0, discount_percent: 0, product: null });
+      return;
+    }
+
     const t = setTimeout(async () => {
       try {
         const r = await api.post("/price-calculator", {
-          zone: form.zone, package: form.package, addons: form.addons,
-          tenant_count: Number(form.tenant_count) || 0, discount_type: form.discount_type || null,
+          zone: form.zone,
+          product_id: form.product_id,
+          addons: form.addons,
+          tenant_count: Number(form.tenant_count) || 0,
+          discount_type: form.discount_type || null,
         });
         setCalc(r.data);
-      } catch { /* ignore */ }
+      } catch {
+        setCalc({ base_price: 0, total_price: 0, discount_percent: 0, product: null });
+      }
     }, 150);
     return () => clearTimeout(t);
-  }, [form.zone, form.package, form.addons, form.tenant_count, form.discount_type]);
+  }, [form.zone, form.product_id, form.addons, form.tenant_count, form.discount_type]);
 
   const toggleAddon = (key) => {
     setForm(f => ({ ...f, addons: f.addons.includes(key) ? f.addons.filter(x => x !== key) : [...f.addons, key] }));
@@ -59,24 +67,24 @@ export default function NewSale() {
 
   const submit = async (e) => {
     e.preventDefault();
-    if (!form.customer_name || !form.phone || !form.zone || !form.package) {
+    if (!form.customer_name || !form.phone || !form.zone || !form.product_id) {
       toast.error("Fyll ut alle obligatoriske felter");
       return;
     }
     setSubmitting(true);
     try {
-      await api.post("/sales", { ...form, tenant_count: Number(form.tenant_count) || 0 });
+      await api.post("/sales", { ...form, package: form.product_id, tenant_count: Number(form.tenant_count) || 0 });
       toast.success("Salg registrert");
       navigate("/sales");
     } catch (err) {
       toast.error(err?.response?.data?.detail || "Kunne ikke registrere salg");
-    } finally { setSubmitting(false); }
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const zones = matrix?.zones || [];
-  const packages = matrix?.packages || [];
-
-  const hasLeietaker = useMemo(() => true, []);
+  const products = matrix?.active_products || [];
 
   return (
     <div className="p-6 sm:p-10 max-w-7xl">
@@ -87,9 +95,7 @@ export default function NewSale() {
       </div>
 
       <form onSubmit={submit} className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Form */}
         <div className="lg:col-span-2 space-y-8">
-          {/* Customer */}
           <section className="d8-card">
             <h2 className="font-display text-xl mb-6">Kundeinformasjon</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
@@ -108,9 +114,8 @@ export default function NewSale() {
             </div>
           </section>
 
-          {/* Sone + pakke */}
           <section className="d8-card">
-            <h2 className="font-display text-xl mb-6">Sone og pakke</h2>
+            <h2 className="font-display text-xl mb-6">Sone og boligtype</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
               <Field label="Sone" required>
                 <select data-testid="select-zone" className={inputCls} value={form.zone} onChange={e => set("zone", e.target.value)}>
@@ -118,10 +123,14 @@ export default function NewSale() {
                   {zones.map(z => <option key={z} value={z}>{z}</option>)}
                 </select>
               </Field>
-              <Field label="Boligtype / Pakke" required>
-                <select data-testid="select-package" className={inputCls} value={form.package} onChange={e => set("package", e.target.value)}>
-                  <option value="">Velg pakke</option>
-                  {packages.map(p => <option key={p} value={p}>{p} {form.zone && matrix?.matrix?.[form.zone]?.[p] ? `— ${formatNOK(matrix.matrix[form.zone][p])}` : ""}</option>)}
+              <Field label="Boligtype" required>
+                <select data-testid="select-package" className={inputCls} value={form.product_id} onChange={e => set("product_id", e.target.value)}>
+                  <option value="">Velg boligtype</option>
+                  {products.map(p => (
+                    <option key={p.product_id} value={p.product_id}>
+                      {p.category} - {p.name} - {formatNOK(p.price_per_day)} per dag
+                    </option>
+                  ))}
                 </select>
               </Field>
             </div>
@@ -153,7 +162,6 @@ export default function NewSale() {
             </div>
           </section>
 
-          {/* Meta */}
           <section className="d8-card">
             <h2 className="font-display text-xl mb-6">Status og kommentar</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
@@ -172,7 +180,6 @@ export default function NewSale() {
           </section>
         </div>
 
-        {/* Summary / calculator */}
         <aside className="lg:sticky lg:top-6 self-start">
           <div className="d8-card border-d8-red/30 bg-gradient-to-b from-d8-surface to-black">
             <div className="flex items-center gap-2 mb-6">
@@ -181,9 +188,9 @@ export default function NewSale() {
             </div>
 
             <div className="space-y-3 text-sm">
-              <Row k="Sone" v={form.zone || "—"} />
-              <Row k="Pakke" v={form.package || "—"} />
-              <Row k="Grunnpris" v={formatNOK(calc.base_price)} mono />
+              <Row k="Sone" v={form.zone || "-"} />
+              <Row k="Boligtype" v={calc.product ? `${calc.product.category} - ${calc.product.name}` : "-"} />
+              <Row k="Pris per dag" v={formatNOK(calc.base_price)} mono />
               {form.addons.includes("garasje") && <Row k="Garasje" v="+10%" subtle />}
               {form.addons.includes("hage") && <Row k="Hage" v="+5%" subtle />}
               {Number(form.tenant_count) > 0 && <Row k={`Leietakere (${form.tenant_count})`} v={`+${500 * Number(form.tenant_count)} kr`} subtle />}
@@ -198,7 +205,7 @@ export default function NewSale() {
             <button type="submit" disabled={submitting} data-testid="submit-sale"
               className="mt-8 w-full bg-d8-red hover:bg-d8-redHover disabled:opacity-60 text-white py-4 flex items-center justify-center gap-2 transition-colors">
               <CheckCircle2 size={18} />
-              <span>{submitting ? "Lagrer…" : "Lagre salg"}</span>
+              <span>{submitting ? "Lagrer..." : "Lagre salg"}</span>
             </button>
           </div>
         </aside>
