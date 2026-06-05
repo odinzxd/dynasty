@@ -73,14 +73,14 @@ export default function Employees() {
   };
 
   return (
-    <div className="p-6 sm:p-10">
+    <div className="p-4 sm:p-10">
       <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-8">
         <div>
           <div className="label-eyebrow text-d8-red mb-2">Adminstyring</div>
-          <h1 className="font-display text-4xl font-light">Ansatte</h1>
+          <h1 className="font-display text-3xl sm:text-4xl font-light">Ansatte</h1>
           <p className="text-d8-textMute mt-2">Opprett brukere, sett passord og administrer tilgang.</p>
         </div>
-        <button onClick={() => setCreateOpen(true)} className="inline-flex items-center justify-center gap-2 bg-d8-red hover:bg-d8-redHover text-white px-4 py-2 text-sm transition-colors">
+        <button onClick={() => setCreateOpen(true)} className="inline-flex w-full sm:w-auto items-center justify-center gap-2 bg-d8-red hover:bg-d8-redHover text-white px-4 py-2.5 text-sm transition-colors">
           <Plus size={16} /> Ny bruker
         </button>
       </div>
@@ -280,7 +280,7 @@ function PasswordModal({ user, onClose, onSaved }) {
 function UserFormFrame({ title, subtitle, onClose, onSubmit, children }) {
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <form onSubmit={onSubmit} className="bg-d8-surface border border-d8-line max-w-lg w-full p-8 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+      <form onSubmit={onSubmit} className="bg-d8-surface border border-d8-line max-w-lg w-full p-4 sm:p-8 max-h-[calc(100vh-2rem)] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <div className="flex justify-between items-start mb-6">
           <div>
             <div className="label-eyebrow text-d8-red mb-2">{title}</div>
@@ -332,9 +332,9 @@ function UserFields({ form, setForm, includePassword, prefix }) {
 
 function ModalActions({ onClose, saving, saveLabel, savingLabel, testId }) {
   return (
-    <div className="flex justify-end gap-3 mt-8">
-      <button type="button" onClick={onClose} className="border border-d8-line px-5 py-2 text-sm hover:border-white/40">Avbryt</button>
-      <button type="submit" disabled={saving} data-testid={testId} className="bg-d8-red hover:bg-d8-redHover text-white px-5 py-2 text-sm">
+    <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 mt-8">
+      <button type="button" onClick={onClose} className="border border-d8-line px-5 py-2.5 text-sm hover:border-white/40">Avbryt</button>
+      <button type="submit" disabled={saving} data-testid={testId} className="bg-d8-red hover:bg-d8-redHover text-white px-5 py-2.5 text-sm">
         {saving ? savingLabel : saveLabel}
       </button>
     </div>

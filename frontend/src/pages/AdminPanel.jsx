@@ -29,7 +29,7 @@ function DatabaseStatus({ status }) {
       ? "border-emerald-500/40 text-emerald-300 bg-emerald-500/10"
       : "border-d8-red/50 text-d8-red bg-d8-red/10";
   return (
-    <div className={`inline-flex items-center gap-2 border px-3 py-2 text-sm ${tone}`}>
+    <div className={`col-span-2 sm:col-auto inline-flex items-center justify-center gap-2 border px-3 py-2 text-sm ${tone}`}>
       <span className={`h-2.5 w-2.5 rounded-full ${!checked ? "bg-neutral-400" : ok ? "bg-emerald-400" : "bg-d8-red"}`} />
       <Database size={15} />
       <span>{checked ? (ok ? "Database oppe" : "Database feil") : "Sjekker database"}</span>
@@ -86,18 +86,18 @@ export default function AdminPanel() {
   };
 
   return (
-    <div className="p-6 sm:p-10">
+    <div className="p-4 sm:p-10">
       <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-8">
         <div>
           <div className="label-eyebrow text-d8-red mb-2">Adminpanel</div>
-          <h1 className="font-display text-4xl font-light">Ledelsens kontrollrom</h1>
+          <h1 className="font-display text-3xl sm:text-4xl font-light">Ledelsens kontrollrom</h1>
         </div>
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-3">
           <DatabaseStatus status={databaseStatus} />
-          <button onClick={() => exportFile("csv")} data-testid="export-csv" className="inline-flex items-center gap-2 border border-d8-line hover:border-d8-red px-4 py-2 text-sm transition-colors">
+          <button onClick={() => exportFile("csv")} data-testid="export-csv" className="inline-flex items-center justify-center gap-2 border border-d8-line hover:border-d8-red px-4 py-2 text-sm transition-colors">
             <Download size={14} /> CSV
           </button>
-          <button onClick={() => exportFile("xlsx")} data-testid="export-xlsx" className="inline-flex items-center gap-2 border border-d8-line hover:border-d8-red px-4 py-2 text-sm transition-colors">
+          <button onClick={() => exportFile("xlsx")} data-testid="export-xlsx" className="inline-flex items-center justify-center gap-2 border border-d8-line hover:border-d8-red px-4 py-2 text-sm transition-colors">
             <FileSpreadsheet size={14} /> Excel
           </button>
         </div>
@@ -258,7 +258,7 @@ function ProductManager({ products, onEdit, onDeleted }) {
           <div className="label-eyebrow mb-2">Boligtyper</div>
           <h2 className="font-display text-2xl">Shell, IPL og MLO</h2>
         </div>
-        <button onClick={() => onEdit("new")} className="inline-flex items-center justify-center gap-2 bg-d8-red hover:bg-d8-redHover text-white px-4 py-2 text-sm transition-colors">
+        <button onClick={() => onEdit("new")} className="inline-flex w-full sm:w-auto items-center justify-center gap-2 bg-d8-red hover:bg-d8-redHover text-white px-4 py-2.5 text-sm transition-colors">
           <Plus size={15} /> Ny boligtype
         </button>
       </div>
@@ -330,7 +330,7 @@ function ProductModal({ product, onClose, onSaved }) {
 
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <form onSubmit={submit} className="bg-d8-surface border border-d8-line max-w-lg w-full p-8" onClick={e => e.stopPropagation()}>
+      <form onSubmit={submit} className="bg-d8-surface border border-d8-line max-w-lg w-full p-4 sm:p-8 max-h-[calc(100vh-2rem)] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <div className="flex justify-between items-start mb-6">
           <div>
             <div className="label-eyebrow text-d8-red mb-2">{product ? "Rediger boligtype" : "Ny boligtype"}</div>
@@ -357,9 +357,9 @@ function ProductModal({ product, onClose, onSaved }) {
             Aktiv i salgskalkulatoren
           </label>
         </div>
-        <div className="flex justify-end gap-3 mt-8">
-          <button type="button" onClick={onClose} className="border border-d8-line px-5 py-2 text-sm hover:border-white/40">Avbryt</button>
-          <button type="submit" disabled={saving} className="bg-d8-red hover:bg-d8-redHover text-white px-5 py-2 text-sm">
+        <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 mt-8">
+          <button type="button" onClick={onClose} className="border border-d8-line px-5 py-2.5 text-sm hover:border-white/40">Avbryt</button>
+          <button type="submit" disabled={saving} className="bg-d8-red hover:bg-d8-redHover text-white px-5 py-2.5 text-sm">
             {saving ? "Lagrer..." : "Lagre"}
           </button>
         </div>
@@ -387,7 +387,7 @@ function CouponManager({ coupons, onEdit, onDeleted }) {
           <div className="label-eyebrow mb-2">Rabattkuponger</div>
           <h2 className="font-display text-2xl">Kuponger ansatte kan bruke</h2>
         </div>
-        <button onClick={() => onEdit("new")} className="inline-flex items-center justify-center gap-2 bg-d8-red hover:bg-d8-redHover text-white px-4 py-2 text-sm transition-colors">
+        <button onClick={() => onEdit("new")} className="inline-flex w-full sm:w-auto items-center justify-center gap-2 bg-d8-red hover:bg-d8-redHover text-white px-4 py-2.5 text-sm transition-colors">
           <Plus size={15} /> Ny kupong
         </button>
       </div>
@@ -462,7 +462,7 @@ function CouponModal({ coupon, onClose, onSaved }) {
 
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <form onSubmit={submit} className="bg-d8-surface border border-d8-line max-w-lg w-full p-8" onClick={e => e.stopPropagation()}>
+      <form onSubmit={submit} className="bg-d8-surface border border-d8-line max-w-lg w-full p-4 sm:p-8 max-h-[calc(100vh-2rem)] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <div className="flex justify-between items-start mb-6">
           <div>
             <div className="label-eyebrow text-d8-red mb-2">{coupon ? "Rediger kupong" : "Ny kupong"}</div>
@@ -491,9 +491,9 @@ function CouponModal({ coupon, onClose, onSaved }) {
             Aktiv i salgskalkulatoren
           </label>
         </div>
-        <div className="flex justify-end gap-3 mt-8">
-          <button type="button" onClick={onClose} className="border border-d8-line px-5 py-2 text-sm hover:border-white/40">Avbryt</button>
-          <button type="submit" disabled={saving} className="bg-d8-red hover:bg-d8-redHover text-white px-5 py-2 text-sm">
+        <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 mt-8">
+          <button type="button" onClick={onClose} className="border border-d8-line px-5 py-2.5 text-sm hover:border-white/40">Avbryt</button>
+          <button type="submit" disabled={saving} className="bg-d8-red hover:bg-d8-redHover text-white px-5 py-2.5 text-sm">
             {saving ? "Lagrer..." : "Lagre"}
           </button>
         </div>
@@ -528,7 +528,7 @@ function EditModal({ sale, matrix, onClose, onSaved }) {
 
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-d8-surface border border-d8-line max-w-2xl w-full p-8 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+      <div className="bg-d8-surface border border-d8-line max-w-2xl w-full p-4 sm:p-8 max-h-[calc(100vh-2rem)] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <div className="flex justify-between items-start mb-6">
           <div>
             <div className="label-eyebrow text-d8-red mb-2">Rediger</div>
@@ -572,9 +572,9 @@ function EditModal({ sale, matrix, onClose, onSaved }) {
           <Lbl label="Kommentar" full><input className={inputCls} value={form.comment || ""} onChange={e => set("comment", e.target.value)} /></Lbl>
         </div>
 
-        <div className="flex justify-end gap-3 mt-6">
-          <button onClick={onClose} className="border border-d8-line px-5 py-2 text-sm hover:border-white/40">Avbryt</button>
-          <button onClick={submit} disabled={saving} data-testid="save-edit" className="bg-d8-red hover:bg-d8-redHover text-white px-5 py-2 text-sm">
+        <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 mt-6">
+          <button onClick={onClose} className="border border-d8-line px-5 py-2.5 text-sm hover:border-white/40">Avbryt</button>
+          <button onClick={submit} disabled={saving} data-testid="save-edit" className="bg-d8-red hover:bg-d8-redHover text-white px-5 py-2.5 text-sm">
             {saving ? "Lagrer…" : "Lagre endringer"}
           </button>
         </div>

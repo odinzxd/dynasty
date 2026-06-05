@@ -29,15 +29,15 @@ export default function Dashboard() {
   }, []);
 
   return (
-    <div className="p-6 sm:p-10">
+    <div className="p-4 sm:p-10">
       {/* Hero */}
-      <div className="relative overflow-hidden border border-d8-line mb-10">
+      <div className="relative overflow-hidden border border-d8-line mb-8 sm:mb-10">
         <img src={HERO_URL} alt="" className="absolute inset-0 w-full h-full object-cover opacity-30" />
         <div className="absolute inset-0 bg-gradient-to-r from-d8-bg via-d8-bg/80 to-transparent" />
-        <div className="relative z-10 p-8 sm:p-12 flex flex-col md:flex-row md:items-end md:justify-between gap-6 animate-fade-in-up">
+        <div className="relative z-10 p-5 sm:p-12 flex flex-col md:flex-row md:items-end md:justify-between gap-6 animate-fade-in-up">
           <div>
             <div className="label-eyebrow text-d8-red mb-3">Dashboard</div>
-            <h1 className="font-display text-4xl sm:text-5xl font-light leading-tight">
+            <h1 className="font-display text-3xl sm:text-5xl font-light leading-tight">
               Hei, <span className="italic">{user?.name?.split(" ")[0]}</span>.
             </h1>
             <p className="text-d8-textMute mt-3 max-w-lg">Her er en oversikt over dine resultater i dag.</p>
@@ -45,7 +45,7 @@ export default function Dashboard() {
           <Link
             to="/sales/new"
             data-testid="hero-new-sale"
-            className="inline-flex items-center gap-2 bg-d8-red hover:bg-d8-redHover text-white px-6 py-3 transition-colors group"
+            className="inline-flex w-full sm:w-auto items-center justify-center gap-2 bg-d8-red hover:bg-d8-redHover text-white px-6 py-3 transition-colors group"
           >
             <span>Registrer nytt salg</span>
             <ArrowUpRight size={18} className="transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
@@ -54,7 +54,7 @@ export default function Dashboard() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6 mb-8 sm:mb-10">
         <Stat label="Salg i dag" value={data?.day_count ?? "—"} sub="aktive registreringer" icon={FileText} testId="stat-day-count" />
         <Stat label="Omsetning i dag" value={formatNOK(data?.day_revenue || 0)} sub="ekskl. kansellerte" icon={Wallet} testId="stat-day-revenue" />
         <Stat label="Snittpris" value={formatNOK(data?.day_count ? (data.day_revenue / data.day_count) : 0)} sub="per salg i dag" icon={BarChart3} testId="stat-avg" />
@@ -62,10 +62,10 @@ export default function Dashboard() {
 
       {/* Recent sales */}
       <div>
-        <div className="flex items-end justify-between mb-4">
+        <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3 mb-4">
           <div>
             <div className="label-eyebrow mb-2">Siste salg</div>
-            <h2 className="font-display text-2xl">Mine nyeste registreringer</h2>
+            <h2 className="font-display text-xl sm:text-2xl">Mine nyeste registreringer</h2>
           </div>
           <Link to="/sales" className="text-sm text-d8-textMute hover:text-d8-red transition-colors" data-testid="link-all-sales">Se alle →</Link>
         </div>

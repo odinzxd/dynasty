@@ -32,6 +32,9 @@
 @layer base {
   * { @apply border-border; }
   html, body, #root { height: 100%; }
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
   body {
     @apply bg-d8-bg text-white font-sans antialiased;
     background-image:
@@ -60,13 +63,28 @@
 }
 
 .label-eyebrow {
-  @apply text-[11px] uppercase tracking-[0.25em] text-d8-textMute font-medium;
+  @apply text-[10px] sm:text-[11px] uppercase tracking-[0.18em] sm:tracking-[0.25em] text-d8-textMute font-medium;
 }
 
 .d8-card {
-  @apply bg-d8-surface border border-d8-line p-6;
+  @apply bg-d8-surface border border-d8-line p-4 sm:p-6;
 }
 
 .d8-table {
-  @apply bg-white text-neutral-900 shadow-[0_8px_32px_rgba(0,0,0,0.5)] border-0;
+  @apply bg-white text-neutral-900 shadow-[0_8px_32px_rgba(0,0,0,0.5)] border-0 overflow-x-auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.d8-table table {
+  min-width: 760px;
+}
+
+@media (max-width: 767px) {
+  input, select, textarea, button {
+    font-size: 16px;
+  }
+
+  .d8-mobile-safe {
+    padding-bottom: calc(5.75rem + env(safe-area-inset-bottom));
+  }
 }

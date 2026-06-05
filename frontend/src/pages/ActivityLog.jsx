@@ -22,14 +22,14 @@ export default function ActivityLog() {
   }, []);
 
   return (
-    <div className="p-6 sm:p-10">
+    <div className="p-4 sm:p-10">
       <div className="mb-8">
         <div className="label-eyebrow text-d8-red mb-2">Logg</div>
-        <h1 className="font-display text-4xl font-light">Aktivitetslogg</h1>
+        <h1 className="font-display text-3xl sm:text-4xl font-light">Aktivitetslogg</h1>
         <p className="text-d8-textMute mt-2">Siste 200 hendelser i systemet.</p>
       </div>
 
-      <div className="d8-card p-0 bg-d8-surface">
+      <div className="d8-card p-0 bg-d8-surface overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-d8-surface2 border-b border-d8-line text-left">
             <tr className="text-d8-textMute">

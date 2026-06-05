@@ -13,13 +13,13 @@ export default function MySales() {
   }, []);
 
   return (
-    <div className="p-6 sm:p-10">
-      <div className="flex items-end justify-between mb-8">
+    <div className="p-4 sm:p-10">
+      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-8">
         <div>
           <div className="label-eyebrow text-d8-red mb-2">Mine salg</div>
-          <h1 className="font-display text-4xl font-light">Alle dine registreringer</h1>
+          <h1 className="font-display text-3xl sm:text-4xl font-light">Alle dine registreringer</h1>
         </div>
-        <Link to="/sales/new" data-testid="my-sales-new-btn" className="bg-d8-red hover:bg-d8-redHover text-white px-5 py-3 transition-colors">Nytt salg</Link>
+        <Link to="/sales/new" data-testid="my-sales-new-btn" className="inline-flex w-full sm:w-auto justify-center bg-d8-red hover:bg-d8-redHover text-white px-5 py-3 transition-colors">Nytt salg</Link>
       </div>
 
       <div className="d8-table">

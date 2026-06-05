@@ -98,17 +98,17 @@ export default function NewSale() {
   const coupons = matrix?.active_coupons || [];
 
   return (
-    <div className="p-6 sm:p-10 max-w-7xl">
+    <div className="p-4 sm:p-10 max-w-7xl">
       <div className="mb-8 animate-fade-in-up">
         <div className="label-eyebrow text-d8-red mb-2">Registrering</div>
-        <h1 className="font-display text-4xl font-light">Nytt salg</h1>
+        <h1 className="font-display text-3xl sm:text-4xl font-light">Nytt salg</h1>
         <p className="text-d8-textMute mt-2">Fyll ut detaljene under. Totalprisen beregnes automatisk.</p>
       </div>
 
-      <form onSubmit={submit} className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2 space-y-8">
+      <form onSubmit={submit} className="grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8">
+        <div className="lg:col-span-2 space-y-6 sm:space-y-8">
           <section className="d8-card">
-            <h2 className="font-display text-xl mb-6">Kundeinformasjon</h2>
+            <h2 className="font-display text-lg sm:text-xl mb-5 sm:mb-6">Kundeinformasjon</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
               <Field label="Kundenavn" required>
                 <input data-testid="input-customer" className={inputCls} value={form.customer_name} onChange={e => set("customer_name", e.target.value)} />
@@ -126,7 +126,7 @@ export default function NewSale() {
           </section>
 
           <section className="d8-card">
-            <h2 className="font-display text-xl mb-6">Sone og boligtype</h2>
+            <h2 className="font-display text-lg sm:text-xl mb-5 sm:mb-6">Sone og boligtype</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
               <Field label="Sone" required>
                 <select data-testid="select-zone" className={inputCls} value={form.zone} onChange={e => set("zone", e.target.value)}>
@@ -148,11 +148,11 @@ export default function NewSale() {
 
             <div className="mt-6">
               <div className="label-eyebrow mb-3">Tillegg</div>
-              <div className="flex flex-wrap gap-3">
+              <div className="grid grid-cols-2 gap-3 sm:flex sm:flex-wrap">
                 {["garasje", "hage"].map(key => (
                   <button type="button" key={key} data-testid={`addon-${key}`}
                     onClick={() => toggleAddon(key)}
-                    className={`px-4 py-2 border text-sm transition-all ${form.addons.includes(key) ? "border-d8-red bg-d8-red/15 text-white" : "border-d8-line text-d8-textMute hover:border-white/40"}`}>
+                    className={`px-4 py-2.5 border text-sm transition-all ${form.addons.includes(key) ? "border-d8-red bg-d8-red/15 text-white" : "border-d8-line text-d8-textMute hover:border-white/40"}`}>
                     {key === "garasje" ? "Garasje +10%" : "Hage +5%"}
                   </button>
                 ))}
@@ -190,7 +190,7 @@ export default function NewSale() {
           </section>
 
           <section className="d8-card">
-            <h2 className="font-display text-xl mb-6">Status og kommentar</h2>
+            <h2 className="font-display text-lg sm:text-xl mb-5 sm:mb-6">Status og kommentar</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
               <Field label="Status">
                 <select data-testid="select-status" className={inputCls} value={form.status} onChange={e => set("status", e.target.value)}>
@@ -228,7 +228,7 @@ export default function NewSale() {
 
             <div className="border-t border-d8-line mt-6 pt-6">
               <div className="label-eyebrow mb-2">Totalpris</div>
-              <div className="font-display text-4xl text-d8-red" data-testid="total-price">{formatNOK(calc.total_price)}</div>
+              <div className="font-display text-3xl sm:text-4xl text-d8-red break-words" data-testid="total-price">{formatNOK(calc.total_price)}</div>
             </div>
 
             <button type="submit" disabled={submitting} data-testid="submit-sale"
