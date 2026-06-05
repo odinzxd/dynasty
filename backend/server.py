@@ -419,7 +419,7 @@ async def get_price_matrix():
             {"value": "5", "label": "Kunderabatt 5%"},
             {"value": "10", "label": "Kunderabatt 10%"},
             {"value": "15", "label": "Kunderabatt 15%"},
-            {"value": "ansatt", "label": "Ansattrabatt 20%"},
+            {"value": "ansatt", "label": "Ansattrabatt"},
         ],
     }
 
