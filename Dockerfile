@@ -2,7 +2,7 @@ FROM node:20-bookworm-slim AS frontend
 
 WORKDIR /app/frontend
 COPY frontend/package.json ./
-RUN npm install --legacy-peer-deps
+RUN npm install --include=dev --legacy-peer-deps
 COPY frontend/ ./
 ENV REACT_APP_BACKEND_URL=
 RUN npm run build
