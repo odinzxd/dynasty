@@ -56,3 +56,14 @@ Admins manage sale products from the admin panel. Each product has:
 
 Employees select one of the active products in the sale calculator. The product
 price per day is used as the base price for the sale.
+
+## Coupons and surcharges
+
+Admins can manage discount coupons from the admin panel. Coupons can be:
+
+- percentage discounts
+- fixed amount discounts
+
+Employees can select active coupons in the sale calculator. Employees can also
+add a manual surcharge with a label and amount, which is added before discounts
+are applied.

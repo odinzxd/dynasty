@@ -13,6 +13,9 @@ const initial = {
   addons: [],
   tenant_count: 0,
   discount_type: "",
+  coupon_code: "",
+  surcharge_label: "",
+  surcharge_amount: 0,
   sale_date: new Date().toISOString().slice(0, 10),
   comment: "",
   status: "aktiv",
@@ -31,14 +34,14 @@ export default function NewSale() {
   const navigate = useNavigate();
   const [matrix, setMatrix] = useState(null);
   const [form, setForm] = useState(initial);
-  const [calc, setCalc] = useState({ base_price: 0, total_price: 0, discount_percent: 0, product: null });
+  const [calc, setCalc] = useState({ base_price: 0, total_price: 0, discount_percent: 0, product: null, coupon: null, coupon_discount: 0, surcharge_amount: 0 });
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => { api.get("/price-matrix").then(r => setMatrix(r.data)); }, []);
 
   useEffect(() => {
     if (!form.zone || !form.product_id) {
-      setCalc({ base_price: 0, total_price: 0, discount_percent: 0, product: null });
+      setCalc({ base_price: 0, total_price: 0, discount_percent: 0, product: null, coupon: null, coupon_discount: 0, surcharge_amount: 0 });
       return;
     }
 
@@ -50,14 +53,16 @@ export default function NewSale() {
           addons: form.addons,
           tenant_count: Number(form.tenant_count) || 0,
           discount_type: form.discount_type || null,
+          coupon_code: form.coupon_code || null,
+          surcharge_amount: Number(form.surcharge_amount) || 0,
         });
         setCalc(r.data);
       } catch {
-        setCalc({ base_price: 0, total_price: 0, discount_percent: 0, product: null });
+        setCalc({ base_price: 0, total_price: 0, discount_percent: 0, product: null, coupon: null, coupon_discount: 0, surcharge_amount: 0 });
       }
     }, 150);
     return () => clearTimeout(t);
-  }, [form.zone, form.product_id, form.addons, form.tenant_count, form.discount_type]);
+  }, [form.zone, form.product_id, form.addons, form.tenant_count, form.discount_type, form.coupon_code, form.surcharge_amount]);
 
   const toggleAddon = (key) => {
     setForm(f => ({ ...f, addons: f.addons.includes(key) ? f.addons.filter(x => x !== key) : [...f.addons, key] }));
@@ -73,7 +78,12 @@ export default function NewSale() {
     }
     setSubmitting(true);
     try {
-      await api.post("/sales", { ...form, package: form.product_id, tenant_count: Number(form.tenant_count) || 0 });
+      await api.post("/sales", {
+        ...form,
+        package: form.product_id,
+        tenant_count: Number(form.tenant_count) || 0,
+        surcharge_amount: Number(form.surcharge_amount) || 0,
+      });
       toast.success("Salg registrert");
       navigate("/sales");
     } catch (err) {
@@ -85,6 +95,7 @@ export default function NewSale() {
 
   const zones = matrix?.zones || [];
   const products = matrix?.active_products || [];
+  const coupons = matrix?.active_coupons || [];
 
   return (
     <div className="p-6 sm:p-10 max-w-7xl">
@@ -159,6 +170,22 @@ export default function NewSale() {
                   {matrix?.discounts?.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
                 </select>
               </Field>
+              <Field label="Kupong">
+                <select data-testid="select-coupon" className={inputCls} value={form.coupon_code} onChange={e => set("coupon_code", e.target.value)}>
+                  <option value="">Ingen kupong</option>
+                  {coupons.map(c => (
+                    <option key={c.coupon_id} value={c.code}>
+                      {c.code} - {c.name} ({c.discount_kind === "percent" ? `${c.discount_value}%` : formatNOK(c.discount_value)})
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Påslag">
+                <input data-testid="input-surcharge-label" className={inputCls} value={form.surcharge_label} onChange={e => set("surcharge_label", e.target.value)} placeholder="f.eks. Ekstra arbeid" />
+              </Field>
+              <Field label="Påslag beløp">
+                <input type="number" min="0" data-testid="input-surcharge" className={inputCls} value={form.surcharge_amount} onChange={e => set("surcharge_amount", e.target.value)} />
+              </Field>
             </div>
           </section>
 
@@ -194,7 +221,9 @@ export default function NewSale() {
               {form.addons.includes("garasje") && <Row k="Garasje" v="+10%" subtle />}
               {form.addons.includes("hage") && <Row k="Hage" v="+5%" subtle />}
               {Number(form.tenant_count) > 0 && <Row k={`Leietakere (${form.tenant_count})`} v={`+${500 * Number(form.tenant_count)} kr`} subtle />}
+              {calc.surcharge_amount > 0 && <Row k={form.surcharge_label || "Påslag"} v={`+${formatNOK(calc.surcharge_amount)}`} subtle />}
               {calc.discount_percent > 0 && <Row k="Rabatt" v={`-${calc.discount_percent}%`} subtle />}
+              {calc.coupon_discount > 0 && <Row k={`Kupong ${calc.coupon?.code || ""}`} v={`-${formatNOK(calc.coupon_discount)}`} subtle />}
             </div>
 
             <div className="border-t border-d8-line mt-6 pt-6">

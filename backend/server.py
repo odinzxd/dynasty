@@ -200,6 +200,14 @@ def _row_to_product(row):
     return data
 
 
+def _row_to_coupon(row):
+    if row is None:
+        return None
+    data = dict(row)
+    data["is_active"] = bool(data.get("is_active", 1))
+    return data
+
+
 def _init_db():
     _execute('''
         CREATE TABLE IF NOT EXISTS users (
@@ -238,6 +246,10 @@ def _init_db():
             addons TEXT NOT NULL,
             tenant_count INTEGER NOT NULL,
             discount_type TEXT,
+            coupon_code TEXT,
+            coupon_discount REAL NOT NULL DEFAULT 0,
+            surcharge_label TEXT,
+            surcharge_amount REAL NOT NULL DEFAULT 0,
             discount_percent REAL NOT NULL,
             base_price REAL NOT NULL,
             total_price REAL NOT NULL,
@@ -253,12 +265,32 @@ def _init_db():
     ''', commit=True)
     if not _column_exists("sales", "product_id"):
         _execute("ALTER TABLE sales ADD COLUMN product_id TEXT", commit=True)
+    if not _column_exists("sales", "coupon_code"):
+        _execute("ALTER TABLE sales ADD COLUMN coupon_code TEXT", commit=True)
+    if not _column_exists("sales", "coupon_discount"):
+        _execute("ALTER TABLE sales ADD COLUMN coupon_discount REAL NOT NULL DEFAULT 0", commit=True)
+    if not _column_exists("sales", "surcharge_label"):
+        _execute("ALTER TABLE sales ADD COLUMN surcharge_label TEXT", commit=True)
+    if not _column_exists("sales", "surcharge_amount"):
+        _execute("ALTER TABLE sales ADD COLUMN surcharge_amount REAL NOT NULL DEFAULT 0", commit=True)
     _execute('''
         CREATE TABLE IF NOT EXISTS sale_products (
             product_id TEXT PRIMARY KEY,
             category TEXT NOT NULL,
             name TEXT NOT NULL,
             price_per_day REAL NOT NULL,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+    ''', commit=True)
+    _execute('''
+        CREATE TABLE IF NOT EXISTS discount_coupons (
+            coupon_id TEXT PRIMARY KEY,
+            code TEXT UNIQUE NOT NULL,
+            name TEXT NOT NULL,
+            discount_kind TEXT NOT NULL,
+            discount_value REAL NOT NULL,
             is_active INTEGER NOT NULL DEFAULT 1,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
@@ -281,6 +313,7 @@ def _init_db():
     _execute('CREATE INDEX IF NOT EXISTS idx_sales_sale_date ON sales(sale_date)', commit=True)
     _execute('CREATE INDEX IF NOT EXISTS idx_sales_product_id ON sales(product_id)', commit=True)
     _execute('CREATE INDEX IF NOT EXISTS idx_sale_products_category ON sale_products(category)', commit=True)
+    _execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_discount_coupons_code ON discount_coupons(code)', commit=True)
     _execute('CREATE INDEX IF NOT EXISTS idx_activity_log_timestamp ON activity_log(timestamp)', commit=True)
     _ensure_initial_admin()
     _ensure_default_products()
@@ -329,6 +362,10 @@ class Sale(BaseModel):
     addons: List[str] = []
     tenant_count: int = 0
     discount_type: Optional[str] = None
+    coupon_code: Optional[str] = None
+    coupon_discount: float = 0
+    surcharge_label: Optional[str] = None
+    surcharge_amount: float = 0
     discount_percent: float = 0
     base_price: float
     total_price: float
@@ -351,6 +388,9 @@ class SaleCreate(BaseModel):
     addons: List[str] = []
     tenant_count: int = 0
     discount_type: Optional[str] = None
+    coupon_code: Optional[str] = None
+    surcharge_label: Optional[str] = None
+    surcharge_amount: float = 0
     sale_date: str
     comment: Optional[str] = None
     status: Literal["aktiv", "betalt", "kansellert", "under_behandling"] = "aktiv"
@@ -365,6 +405,9 @@ class SaleUpdate(BaseModel):
     addons: Optional[List[str]] = None
     tenant_count: Optional[int] = None
     discount_type: Optional[str] = None
+    coupon_code: Optional[str] = None
+    surcharge_label: Optional[str] = None
+    surcharge_amount: Optional[float] = None
     sale_date: Optional[str] = None
     comment: Optional[str] = None
     status: Optional[Literal["aktiv", "betalt", "kansellert", "under_behandling"]] = None
@@ -413,6 +456,34 @@ class SaleProductUpdate(BaseModel):
     is_active: Optional[bool] = None
 
 
+class DiscountCoupon(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    coupon_id: str
+    code: str
+    name: str
+    discount_kind: Literal["percent", "amount"]
+    discount_value: float
+    is_active: bool = True
+    created_at: str
+    updated_at: str
+
+
+class DiscountCouponCreate(BaseModel):
+    code: str
+    name: str
+    discount_kind: Literal["percent", "amount"]
+    discount_value: float
+    is_active: bool = True
+
+
+class DiscountCouponUpdate(BaseModel):
+    code: Optional[str] = None
+    name: Optional[str] = None
+    discount_kind: Optional[Literal["percent", "amount"]] = None
+    discount_value: Optional[float] = None
+    is_active: Optional[bool] = None
+
+
 # =============== Helpers ===============
 async def _get_product(product_id_or_name: Optional[str], include_inactive: bool = False):
     if not product_id_or_name:
@@ -431,7 +502,23 @@ async def _get_product(product_id_or_name: Optional[str], include_inactive: bool
     )
 
 
-async def calculate_price(product_id_or_name: str, addons: List[str], tenant_count: int, discount_type: Optional[str]):
+async def _get_coupon(coupon_code: Optional[str], include_inactive: bool = False):
+    if not coupon_code:
+        return None
+    code = coupon_code.strip().upper()
+    if include_inactive:
+        return await _fetch_one("SELECT * FROM discount_coupons WHERE upper(code) = ?", (code,))
+    return await _fetch_one("SELECT * FROM discount_coupons WHERE upper(code) = ? AND is_active = 1", (code,))
+
+
+async def calculate_price(
+    product_id_or_name: str,
+    addons: List[str],
+    tenant_count: int,
+    discount_type: Optional[str],
+    coupon_code: Optional[str] = None,
+    surcharge_amount: float = 0,
+):
     product = await _get_product(product_id_or_name)
     if not product:
         raise HTTPException(status_code=400, detail="Ugyldig eller deaktivert boligtype")
@@ -443,6 +530,8 @@ async def calculate_price(product_id_or_name: str, addons: List[str], tenant_cou
         subtotal += base * 0.05
     if tenant_count and tenant_count > 0:
         subtotal += 500 * tenant_count
+    surcharge = max(float(surcharge_amount or 0), 0)
+    subtotal += surcharge
     pct = 0.0
     if discount_type == "5":
         pct = 5
@@ -452,8 +541,19 @@ async def calculate_price(product_id_or_name: str, addons: List[str], tenant_cou
         pct = 15
     elif discount_type == "ansatt":
         pct = 20
-    total = subtotal * (1 - pct / 100.0)
-    return float(base), round(total, 2), pct, _row_to_product(product)
+    total_after_discount = subtotal * (1 - pct / 100.0)
+
+    coupon = await _get_coupon(coupon_code)
+    coupon_discount = 0.0
+    if coupon:
+        if coupon["discount_kind"] == "percent":
+            coupon_discount = total_after_discount * (float(coupon["discount_value"]) / 100.0)
+        else:
+            coupon_discount = float(coupon["discount_value"])
+        coupon_discount = min(coupon_discount, total_after_discount)
+
+    total = max(total_after_discount - coupon_discount, 0)
+    return float(base), round(total, 2), pct, _row_to_product(product), _row_to_coupon(coupon), round(coupon_discount, 2), surcharge
 
 
 async def log_activity(user_id: str, user_email: str, action: str, details: Optional[dict] = None):
@@ -578,6 +678,8 @@ async def auth_logout(request: Request, response: Response):
 async def get_price_matrix():
     products = [_row_to_product(row) for row in await _fetch_all("SELECT * FROM sale_products ORDER BY category, name", ())]
     active_products = [p for p in products if p["is_active"]]
+    coupons = [_row_to_coupon(row) for row in await _fetch_all("SELECT * FROM discount_coupons ORDER BY code", ())]
+    active_coupons = [c for c in coupons if c["is_active"]]
     return {
         "zones": ZONES,
         "packages": PACKAGES,
@@ -585,6 +687,8 @@ async def get_price_matrix():
         "product_categories": ["Shell", "IPL", "MLO"],
         "products": products,
         "active_products": active_products,
+        "coupons": coupons,
+        "active_coupons": active_coupons,
         "addons": {
             "garasje": {"label": "Garasje", "type": "percent", "value": 10},
             "hage": {"label": "Hage", "type": "percent", "value": 5},
@@ -605,15 +709,30 @@ async def price_calculator(body: dict):
     addons = body.get("addons", [])
     tenant_count = int(body.get("tenant_count") or 0)
     discount_type = body.get("discount_type")
-    base, total, pct, product = await calculate_price(product_id, addons, tenant_count, discount_type)
-    return {"base_price": base, "total_price": total, "discount_percent": pct, "product": product}
+    coupon_code = body.get("coupon_code")
+    surcharge_amount = float(body.get("surcharge_amount") or 0)
+    base, total, pct, product, coupon, coupon_discount, surcharge = await calculate_price(
+        product_id, addons, tenant_count, discount_type, coupon_code, surcharge_amount,
+    )
+    return {
+        "base_price": base,
+        "total_price": total,
+        "discount_percent": pct,
+        "product": product,
+        "coupon": coupon,
+        "coupon_discount": coupon_discount,
+        "surcharge_amount": surcharge,
+    }
 
 
 # =============== Sales Endpoints ===============
 @api_router.post("/sales", response_model=Sale)
 async def create_sale(payload: SaleCreate, user: User = Depends(get_current_user)):
     product_key = payload.product_id or payload.package
-    base, total, pct, product = await calculate_price(product_key, payload.addons, payload.tenant_count, payload.discount_type)
+    base, total, pct, product, coupon, coupon_discount, surcharge = await calculate_price(
+        product_key, payload.addons, payload.tenant_count, payload.discount_type,
+        payload.coupon_code, payload.surcharge_amount,
+    )
     now = datetime.now(timezone.utc).isoformat()
     sale = {
         "sale_id": f"sale_{uuid.uuid4().hex[:12]}",
@@ -626,6 +745,10 @@ async def create_sale(payload: SaleCreate, user: User = Depends(get_current_user
         "addons": payload.addons,
         "tenant_count": payload.tenant_count,
         "discount_type": payload.discount_type,
+        "coupon_code": coupon["code"] if coupon else None,
+        "coupon_discount": coupon_discount,
+        "surcharge_label": payload.surcharge_label,
+        "surcharge_amount": surcharge,
         "discount_percent": pct,
         "base_price": base,
         "total_price": total,
@@ -639,9 +762,9 @@ async def create_sale(payload: SaleCreate, user: User = Depends(get_current_user
         "updated_at": now,
     }
     await _execute_commit(
-        "INSERT INTO sales (sale_id, customer_name, phone, address, zone, product_id, package, addons, tenant_count, discount_type, discount_percent, base_price, total_price, sale_date, employee_id, employee_name, employee_email, comment, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO sales (sale_id, customer_name, phone, address, zone, product_id, package, addons, tenant_count, discount_type, coupon_code, coupon_discount, surcharge_label, surcharge_amount, discount_percent, base_price, total_price, sale_date, employee_id, employee_name, employee_email, comment, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
-            sale["sale_id"], sale["customer_name"], sale["phone"], sale["address"], sale["zone"], sale["product_id"], sale["package"], _json_dump(sale["addons"]), sale["tenant_count"], sale["discount_type"], sale["discount_percent"], sale["base_price"], sale["total_price"], sale["sale_date"], sale["employee_id"], sale["employee_name"], sale["employee_email"], sale["comment"], sale["status"], sale["created_at"], sale["updated_at"],
+            sale["sale_id"], sale["customer_name"], sale["phone"], sale["address"], sale["zone"], sale["product_id"], sale["package"], _json_dump(sale["addons"]), sale["tenant_count"], sale["discount_type"], sale["coupon_code"], sale["coupon_discount"], sale["surcharge_label"], sale["surcharge_amount"], sale["discount_percent"], sale["base_price"], sale["total_price"], sale["sale_date"], sale["employee_id"], sale["employee_name"], sale["employee_email"], sale["comment"], sale["status"], sale["created_at"], sale["updated_at"],
         ),
     )
     await log_activity(user.user_id, user.email, "sale_created",
@@ -717,14 +840,18 @@ async def update_sale(sale_id: str, payload: SaleUpdate, user: User = Depends(re
     existing = _row_to_sale(doc)
     updates = payload.model_dump(exclude_unset=True)
     merged = {**existing, **updates}
-    if any(k in updates for k in ["product_id", "package", "addons", "tenant_count", "discount_type"]):
+    if any(k in updates for k in ["product_id", "package", "addons", "tenant_count", "discount_type", "coupon_code", "surcharge_amount"]):
         product_key = merged.get("product_id") or merged.get("package")
-        base, total, pct, product = await calculate_price(
+        base, total, pct, product, coupon, coupon_discount, surcharge = await calculate_price(
             product_key, merged.get("addons", []),
             int(merged.get("tenant_count") or 0), merged.get("discount_type"),
+            merged.get("coupon_code"), float(merged.get("surcharge_amount") or 0),
         )
         merged["product_id"] = product["product_id"]
         merged["package"] = f'{product["category"]} - {product["name"]}'
+        merged["coupon_code"] = coupon["code"] if coupon else None
+        merged["coupon_discount"] = coupon_discount
+        merged["surcharge_amount"] = surcharge
         merged["base_price"] = base
         merged["total_price"] = total
         merged["discount_percent"] = pct
@@ -900,6 +1027,103 @@ async def delete_product(product_id: str, user: User = Depends(require_admin)):
     return {"ok": True, "deleted": True}
 
 
+def _normalize_coupon_code(code: str) -> str:
+    return code.strip().upper().replace(" ", "-")
+
+
+@api_router.get("/coupons", response_model=List[DiscountCoupon])
+async def list_coupons(user: User = Depends(require_admin)):
+    rows = await _fetch_all("SELECT * FROM discount_coupons ORDER BY code", ())
+    return [DiscountCoupon(**_row_to_coupon(row)) for row in rows]
+
+
+@api_router.post("/coupons", response_model=DiscountCoupon)
+async def create_coupon(payload: DiscountCouponCreate, user: User = Depends(require_admin)):
+    code = _normalize_coupon_code(payload.code)
+    name = payload.name.strip()
+    if len(code) < 2:
+        raise HTTPException(status_code=400, detail="Kupongkode må ha minst 2 tegn")
+    if not name:
+        raise HTTPException(status_code=400, detail="Navn mangler")
+    if payload.discount_value <= 0:
+        raise HTTPException(status_code=400, detail="Rabattverdi må være større enn 0")
+    if payload.discount_kind == "percent" and payload.discount_value > 100:
+        raise HTTPException(status_code=400, detail="Prosentkupong kan ikke være over 100%")
+
+    existing = await _fetch_one("SELECT coupon_id FROM discount_coupons WHERE upper(code) = ?", (code,))
+    if existing:
+        raise HTTPException(status_code=400, detail="Kupongkoden er allerede i bruk")
+
+    now = datetime.now(timezone.utc).isoformat()
+    coupon_id = f"coupon_{uuid.uuid4().hex[:12]}"
+    await _execute_commit(
+        "INSERT INTO discount_coupons (coupon_id, code, name, discount_kind, discount_value, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (coupon_id, code, name, payload.discount_kind, float(payload.discount_value), 1 if payload.is_active else 0, now, now),
+    )
+    await log_activity(user.user_id, user.email, "coupon_created", {"coupon_id": coupon_id, "code": code})
+    row = await _fetch_one("SELECT * FROM discount_coupons WHERE coupon_id = ?", (coupon_id,))
+    return DiscountCoupon(**_row_to_coupon(row))
+
+
+@api_router.patch("/coupons/{coupon_id}", response_model=DiscountCoupon)
+async def update_coupon(coupon_id: str, payload: DiscountCouponUpdate, user: User = Depends(require_admin)):
+    existing = await _fetch_one("SELECT * FROM discount_coupons WHERE coupon_id = ?", (coupon_id,))
+    if not existing:
+        raise HTTPException(status_code=404, detail="Kupong ikke funnet")
+
+    updates = payload.model_dump(exclude_unset=True)
+    if "code" in updates:
+        updates["code"] = _normalize_coupon_code(updates["code"])
+        if len(updates["code"]) < 2:
+            raise HTTPException(status_code=400, detail="Kupongkode må ha minst 2 tegn")
+        duplicate = await _fetch_one("SELECT coupon_id FROM discount_coupons WHERE upper(code) = ? AND coupon_id != ?", (updates["code"], coupon_id))
+        if duplicate:
+            raise HTTPException(status_code=400, detail="Kupongkoden er allerede i bruk")
+    if "name" in updates:
+        updates["name"] = updates["name"].strip()
+        if not updates["name"]:
+            raise HTTPException(status_code=400, detail="Navn mangler")
+    if "discount_value" in updates and updates["discount_value"] <= 0:
+        raise HTTPException(status_code=400, detail="Rabattverdi må være større enn 0")
+    kind = updates.get("discount_kind", existing["discount_kind"])
+    value = updates.get("discount_value", existing["discount_value"])
+    if kind == "percent" and float(value) > 100:
+        raise HTTPException(status_code=400, detail="Prosentkupong kan ikke være over 100%")
+    if "is_active" in updates:
+        updates["is_active"] = 1 if updates["is_active"] else 0
+    if not updates:
+        raise HTTPException(status_code=400, detail="Ingen felter å oppdatere")
+
+    updates["updated_at"] = datetime.now(timezone.utc).isoformat()
+    fields = []
+    params = []
+    for key, value in updates.items():
+        fields.append(f"{key} = ?")
+        params.append(value)
+    params.append(coupon_id)
+    await _execute_commit(f"UPDATE discount_coupons SET {', '.join(fields)} WHERE coupon_id = ?", tuple(params))
+    await log_activity(user.user_id, user.email, "coupon_updated", {"coupon_id": coupon_id, "changes": list(updates.keys())})
+    row = await _fetch_one("SELECT * FROM discount_coupons WHERE coupon_id = ?", (coupon_id,))
+    return DiscountCoupon(**_row_to_coupon(row))
+
+
+@api_router.delete("/coupons/{coupon_id}")
+async def delete_coupon(coupon_id: str, user: User = Depends(require_admin)):
+    existing = await _fetch_one("SELECT * FROM discount_coupons WHERE coupon_id = ?", (coupon_id,))
+    if not existing:
+        raise HTTPException(status_code=404, detail="Kupong ikke funnet")
+
+    used = await _fetch_one("SELECT COUNT(*) AS count FROM sales WHERE coupon_code = ?", (existing["code"],))
+    if used and used["count"] > 0:
+        await _execute_commit("UPDATE discount_coupons SET is_active = 0, updated_at = ? WHERE coupon_id = ?", (datetime.now(timezone.utc).isoformat(), coupon_id))
+        await log_activity(user.user_id, user.email, "coupon_deactivated", {"coupon_id": coupon_id, "reason": "used_in_sales"})
+        return {"ok": True, "deactivated": True}
+
+    await _execute_commit("DELETE FROM discount_coupons WHERE coupon_id = ?", (coupon_id,))
+    await log_activity(user.user_id, user.email, "coupon_deleted", {"coupon_id": coupon_id})
+    return {"ok": True, "deleted": True}
+
+
 # =============== Users (admin) ===============
 @api_router.get("/users", response_model=List[User])
 async def list_users(user: User = Depends(require_admin)):
@@ -1046,7 +1270,8 @@ async def get_activity_log(user: User = Depends(require_admin), limit: int = 200
 # =============== Export ===============
 def _sales_rows(docs):
     headers = ["Dato", "Kunde", "Telefon", "Adresse", "Sone", "Pakke", "Tillegg",
-               "Leietakere", "Rabatt %", "Grunnpris", "Totalpris", "Ansatt", "Status", "Kommentar"]
+               "Leietakere", "Rabatt %", "Kupong", "Kupongrabatt", "Påslag", "Påslag beløp",
+               "Grunnpris", "Totalpris", "Ansatt", "Status", "Kommentar"]
     rows = []
     for d in docs:
         rows.append([
@@ -1059,6 +1284,10 @@ def _sales_rows(docs):
             ",".join(d.get("addons", [])),
             d.get("tenant_count", 0),
             d.get("discount_percent", 0),
+            d.get("coupon_code") or "",
+            d.get("coupon_discount", 0),
+            d.get("surcharge_label") or "",
+            d.get("surcharge_amount", 0),
             d.get("base_price", 0),
             d.get("total_price", 0),
             d.get("employee_name"),

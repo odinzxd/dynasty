@@ -43,23 +43,27 @@ export default function AdminPanel() {
   const [users, setUsers] = useState([]);
   const [matrix, setMatrix] = useState(null);
   const [products, setProducts] = useState([]);
+  const [coupons, setCoupons] = useState([]);
   const [databaseStatus, setDatabaseStatus] = useState(null);
   const [editSale, setEditSale] = useState(null);
   const [editProduct, setEditProduct] = useState(null);
+  const [editCoupon, setEditCoupon] = useState(null);
 
   const [filters, setFilters] = useState({ zone: "", package: "", status: "", employee_id: "", date_from: "", date_to: "" });
 
   const loadAll = async () => {
-    const [s, sa, u, m, p, db] = await Promise.all([
+    const [s, sa, u, m, p, c, db] = await Promise.all([
       api.get("/stats/admin"),
       api.get("/sales", { params: { ...cleanFilters(filters) } }),
       api.get("/users"),
       api.get("/price-matrix"),
       api.get("/products"),
+      api.get("/coupons"),
       api.get("/system/database").catch(e => ({ data: { ok: false, error: e?.response?.data?.detail || "Kunne ikke sjekke database" } })),
     ]);
     setStats(s.data); setSales(sa.data); setUsers(u.data); setMatrix(m.data);
     setProducts(p.data);
+    setCoupons(c.data);
     setDatabaseStatus(db.data);
   };
 
@@ -155,6 +159,7 @@ export default function AdminPanel() {
       </div>
 
       <ProductManager products={products} onEdit={setEditProduct} onDeleted={loadAll} />
+      <CouponManager coupons={coupons} onEdit={setEditCoupon} onDeleted={loadAll} />
 
       {/* Filters */}
       <div className="d8-card mb-6">
@@ -223,6 +228,7 @@ export default function AdminPanel() {
 
       {editSale && <EditModal sale={editSale} matrix={matrix} onClose={() => setEditSale(null)} onSaved={() => { setEditSale(null); loadAll(); }} />}
       {editProduct && <ProductModal product={editProduct === "new" ? null : editProduct} onClose={() => setEditProduct(null)} onSaved={() => { setEditProduct(null); loadAll(); }} />}
+      {editCoupon && <CouponModal coupon={editCoupon === "new" ? null : editCoupon} onClose={() => setEditCoupon(null)} onSaved={() => { setEditCoupon(null); loadAll(); }} />}
     </div>
   );
 }
@@ -362,6 +368,140 @@ function ProductModal({ product, onClose, onSaved }) {
   );
 }
 
+function CouponManager({ coupons, onEdit, onDeleted }) {
+  const remove = async (coupon) => {
+    if (!window.confirm(`Slette eller deaktivere kupongen ${coupon.code}?`)) return;
+    try {
+      const r = await api.delete(`/coupons/${coupon.coupon_id}`);
+      toast.success(r.data.deactivated ? "Kupong deaktivert" : "Kupong slettet");
+      onDeleted();
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Kunne ikke fjerne kupong");
+    }
+  };
+
+  return (
+    <div className="d8-card mb-10">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+        <div>
+          <div className="label-eyebrow mb-2">Rabattkuponger</div>
+          <h2 className="font-display text-2xl">Kuponger ansatte kan bruke</h2>
+        </div>
+        <button onClick={() => onEdit("new")} className="inline-flex items-center justify-center gap-2 bg-d8-red hover:bg-d8-redHover text-white px-4 py-2 text-sm transition-colors">
+          <Plus size={15} /> Ny kupong
+        </button>
+      </div>
+      <div className="d8-table">
+        <table className="w-full text-sm">
+          <thead className="bg-neutral-100 border-b border-neutral-200 text-left">
+            <tr>
+              <th className="px-4 py-3 font-medium">Kode</th>
+              <th className="px-4 py-3 font-medium">Navn</th>
+              <th className="px-4 py-3 font-medium text-right">Rabatt</th>
+              <th className="px-4 py-3 font-medium">Status</th>
+              <th className="px-4 py-3 font-medium text-right">Handling</th>
+            </tr>
+          </thead>
+          <tbody>
+            {coupons.length === 0 ? (
+              <tr><td colSpan={5} className="px-4 py-8 text-center text-neutral-500">Ingen kuponger opprettet.</td></tr>
+            ) : coupons.map(coupon => (
+              <tr key={coupon.coupon_id} className="border-b border-neutral-100 hover:bg-neutral-50">
+                <td className="px-4 py-3 font-mono">{coupon.code}</td>
+                <td className="px-4 py-3 font-medium">{coupon.name}</td>
+                <td className="px-4 py-3 text-right font-mono">
+                  {coupon.discount_kind === "percent" ? `${coupon.discount_value}%` : formatNOK(coupon.discount_value)}
+                </td>
+                <td className="px-4 py-3">
+                  <span className={`inline-block px-2.5 py-1 text-[11px] uppercase tracking-wider border ${coupon.is_active ? "border-emerald-400 text-emerald-600 bg-emerald-50" : "border-neutral-400 text-neutral-500 bg-neutral-100"}`}>
+                    {coupon.is_active ? "Aktiv" : "Inaktiv"}
+                  </span>
+                </td>
+                <td className="px-4 py-3 text-right">
+                  <button onClick={() => onEdit(coupon)} className="text-neutral-600 hover:text-d8-red p-1.5 transition-colors"><Pencil size={14} /></button>
+                  <button onClick={() => remove(coupon)} className="text-neutral-600 hover:text-d8-red p-1.5 transition-colors"><Trash2 size={14} /></button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function CouponModal({ coupon, onClose, onSaved }) {
+  const [form, setForm] = useState({
+    code: coupon?.code || "",
+    name: coupon?.name || "",
+    discount_kind: coupon?.discount_kind || "percent",
+    discount_value: coupon?.discount_value || "",
+    is_active: coupon?.is_active ?? true,
+  });
+  const [saving, setSaving] = useState(false);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      const payload = { ...form, discount_value: Number(form.discount_value) || 0 };
+      if (coupon) {
+        await api.patch(`/coupons/${coupon.coupon_id}`, payload);
+        toast.success("Kupong oppdatert");
+      } else {
+        await api.post("/coupons", payload);
+        toast.success("Kupong opprettet");
+      }
+      onSaved();
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Kunne ikke lagre kupong");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <form onSubmit={submit} className="bg-d8-surface border border-d8-line max-w-lg w-full p-8" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-start mb-6">
+          <div>
+            <div className="label-eyebrow text-d8-red mb-2">{coupon ? "Rediger kupong" : "Ny kupong"}</div>
+            <h2 className="font-display text-2xl">Rabattkode</h2>
+          </div>
+          <button type="button" onClick={onClose} className="text-d8-textMute hover:text-white"><X /></button>
+        </div>
+        <div className="space-y-5">
+          <Lbl label="Kode">
+            <input className={inputCls} value={form.code} onChange={e => setForm({ ...form, code: e.target.value })} placeholder="f.eks. SOMMER10" />
+          </Lbl>
+          <Lbl label="Navn">
+            <input className={inputCls} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="f.eks. Sommerkampanje" />
+          </Lbl>
+          <Lbl label="Rabattype">
+            <select className={inputCls} value={form.discount_kind} onChange={e => setForm({ ...form, discount_kind: e.target.value })}>
+              <option value="percent">Prosent</option>
+              <option value="amount">Fast beløp</option>
+            </select>
+          </Lbl>
+          <Lbl label={form.discount_kind === "percent" ? "Prosent" : "Beløp"}>
+            <input type="number" min="0" step="1" className={inputCls} value={form.discount_value} onChange={e => setForm({ ...form, discount_value: e.target.value })} />
+          </Lbl>
+          <label className="flex items-center gap-3 text-sm">
+            <input type="checkbox" checked={form.is_active} onChange={e => setForm({ ...form, is_active: e.target.checked })} />
+            Aktiv i salgskalkulatoren
+          </label>
+        </div>
+        <div className="flex justify-end gap-3 mt-8">
+          <button type="button" onClick={onClose} className="border border-d8-line px-5 py-2 text-sm hover:border-white/40">Avbryt</button>
+          <button type="submit" disabled={saving} className="bg-d8-red hover:bg-d8-redHover text-white px-5 py-2 text-sm">
+            {saving ? "Lagrer..." : "Lagre"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 function EditModal({ sale, matrix, onClose, onSaved }) {
   const [form, setForm] = useState({ ...sale });
   const [saving, setSaving] = useState(false);
@@ -375,6 +515,8 @@ function EditModal({ sale, matrix, onClose, onSaved }) {
         customer_name: form.customer_name, phone: form.phone, address: form.address,
         zone: form.zone, product_id: form.product_id || form.package, package: form.product_id || form.package, addons: form.addons || [],
         tenant_count: Number(form.tenant_count) || 0, discount_type: form.discount_type || null,
+        coupon_code: form.coupon_code || null, surcharge_label: form.surcharge_label || null,
+        surcharge_amount: Number(form.surcharge_amount) || 0,
         sale_date: form.sale_date, comment: form.comment, status: form.status,
       });
       toast.success("Salg oppdatert");
@@ -413,6 +555,18 @@ function EditModal({ sale, matrix, onClose, onSaved }) {
             <select className={inputCls} value={form.status || "aktiv"} onChange={e => set("status", e.target.value)} data-testid="edit-status">
               {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
+          </Lbl>
+          <Lbl label="Kupong">
+            <select className={inputCls} value={form.coupon_code || ""} onChange={e => set("coupon_code", e.target.value)}>
+              <option value="">Ingen kupong</option>
+              {(matrix?.coupons || []).map(c => <option key={c.coupon_id} value={c.code}>{c.code} - {c.name}</option>)}
+            </select>
+          </Lbl>
+          <Lbl label="Påslag">
+            <input className={inputCls} value={form.surcharge_label || ""} onChange={e => set("surcharge_label", e.target.value)} />
+          </Lbl>
+          <Lbl label="Påslag beløp">
+            <input type="number" min="0" className={inputCls} value={form.surcharge_amount || 0} onChange={e => set("surcharge_amount", e.target.value)} />
           </Lbl>
           <Lbl label="Dato"><input type="date" className={inputCls} value={form.sale_date || ""} onChange={e => set("sale_date", e.target.value)} /></Lbl>
           <Lbl label="Kommentar" full><input className={inputCls} value={form.comment || ""} onChange={e => set("comment", e.target.value)} /></Lbl>
