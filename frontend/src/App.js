@@ -10,6 +10,7 @@ import MySales from "@/pages/MySales";
 import AdminPanel from "@/pages/AdminPanel";
 import ActivityLog from "@/pages/ActivityLog";
 import Employees from "@/pages/Employees";
+import Accounting from "@/pages/Accounting";
 import Layout from "@/components/Layout";
 import ProtectedRoute from "@/components/ProtectedRoute";
 
@@ -25,6 +26,7 @@ function AppRouter() {
         <Route path="/admin" element={<ProtectedRoute adminOnly><AdminPanel /></ProtectedRoute>} />
         <Route path="/admin/employees" element={<ProtectedRoute adminOnly><Employees /></ProtectedRoute>} />
         <Route path="/admin/activity" element={<ProtectedRoute adminOnly><ActivityLog /></ProtectedRoute>} />
+        <Route path="/admin/accounting" element={<ProtectedRoute adminOnly><Accounting /></ProtectedRoute>} />
       </Route>
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>

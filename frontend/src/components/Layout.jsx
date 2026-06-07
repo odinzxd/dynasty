@@ -41,6 +41,7 @@ export default function Layout() {
         { to: "/admin", icon: Shield, label: "Admin", testId: "nav-admin" },
         { to: "/admin/employees", icon: Users, label: "Ansatte", testId: "nav-employees" },
         { to: "/admin/activity", icon: ScrollText, label: "Logg", testId: "nav-activity" },
+        { to: "/admin/accounting", icon: ScrollText, label: "Regnskap", testId: "nav-accounting" },
       ]
     : [];
 

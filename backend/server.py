@@ -192,6 +192,13 @@ def _row_to_activity(row):
     return data
 
 
+def _row_to_ledger(row):
+    if row is None:
+        return None
+    data = dict(row)
+    return data
+
+
 def _row_to_product(row):
     if row is None:
         return None
@@ -306,6 +313,22 @@ def _init_db():
             timestamp TEXT NOT NULL
         )
     ''', commit=True)
+
+    # Ledger / accounting table
+    _execute('''
+        CREATE TABLE IF NOT EXISTS ledger (
+            entry_id TEXT PRIMARY KEY,
+            entry_date TEXT NOT NULL,
+            amount REAL NOT NULL,
+            direction TEXT NOT NULL,
+            category TEXT,
+            description TEXT,
+            employee_id TEXT NOT NULL,
+            employee_name TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+    ''', commit=True)
+
     _execute('CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)', commit=True)
     _execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username) WHERE username IS NOT NULL', commit=True)
     _execute('CREATE INDEX IF NOT EXISTS idx_user_sessions_user_id ON user_sessions(user_id)', commit=True)
@@ -315,6 +338,7 @@ def _init_db():
     _execute('CREATE INDEX IF NOT EXISTS idx_sale_products_category ON sale_products(category)', commit=True)
     _execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_discount_coupons_code ON discount_coupons(code)', commit=True)
     _execute('CREATE INDEX IF NOT EXISTS idx_activity_log_timestamp ON activity_log(timestamp)', commit=True)
+    _execute('CREATE INDEX IF NOT EXISTS idx_ledger_entry_date ON ledger(entry_date)', commit=True)
     _ensure_initial_admin()
     _ensure_default_products()
 
@@ -482,6 +506,27 @@ class DiscountCouponUpdate(BaseModel):
     discount_kind: Optional[Literal["percent", "amount"]] = None
     discount_value: Optional[float] = None
     is_active: Optional[bool] = None
+
+
+class LedgerEntry(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    entry_id: str
+    entry_date: str
+    amount: float
+    direction: Literal["in", "out"]
+    category: Optional[str] = None
+    description: Optional[str] = None
+    employee_id: str
+    employee_name: str
+    created_at: str
+
+
+class LedgerCreate(BaseModel):
+    entry_date: str
+    amount: float
+    direction: Literal["in", "out"]
+    category: Optional[str] = None
+    description: Optional[str] = None
 
 
 # =============== Helpers ===============
@@ -880,6 +925,38 @@ async def delete_sale(sale_id: str, user: User = Depends(require_admin)):
     await _execute_commit("DELETE FROM sales WHERE sale_id = ?", (sale_id,))
     await log_activity(user.user_id, user.email, "sale_deleted", {"sale_id": sale_id})
     return {"ok": True}
+
+
+# =============== Ledger / Accounting ===============
+
+@api_router.get("/ledger")
+async def list_ledger(user: User = Depends(get_current_user)):
+    docs = await _fetch_all("SELECT * FROM ledger ORDER BY entry_date DESC LIMIT 1000", ())
+    entries = [_row_to_ledger(row) for row in docs]
+    return entries
+
+
+@api_router.post("/ledger", response_model=LedgerEntry)
+async def create_ledger_entry(payload: LedgerCreate, user: User = Depends(get_current_user)):
+    entry = {
+        "entry_id": f"led_{uuid.uuid4().hex[:12]}",
+        "entry_date": payload.entry_date,
+        "amount": float(payload.amount),
+        "direction": payload.direction,
+        "category": payload.category,
+        "description": payload.description,
+        "employee_id": user.user_id,
+        "employee_name": user.name,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await _execute_commit(
+        "INSERT INTO ledger (entry_id, entry_date, amount, direction, category, description, employee_id, employee_name, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            entry["entry_id"], entry["entry_date"], entry["amount"], entry["direction"], entry["category"], entry["description"], entry["employee_id"], entry["employee_name"], entry["created_at"],
+        ),
+    )
+    await log_activity(user.user_id, user.email, "ledger_created", {"entry_id": entry["entry_id"], "amount": entry["amount"], "direction": entry["direction"]})
+    return LedgerEntry(**entry)
 
 
 # =============== Stats ===============
