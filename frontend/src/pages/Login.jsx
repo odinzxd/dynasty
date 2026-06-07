@@ -6,7 +6,8 @@ import { toast } from "sonner";
 import BrandLogo from "@/components/BrandLogo";
 import { LogIn } from "lucide-react";
 
-const BG_URL = "https://images.unsplash.com/photo-1757439402296-000be181e38b?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NTZ8MHwxfHNlYXJjaHwzfHxsdXh1cnklMjByZWFsJTIwZXN0YXRlJTIwbmlnaHR8ZW58MHx8fHwxNzgwNjA3NTg0fDA&ixlib=rb-4.1.0&q=85";
+// Use a local frontpage hero image. Place your provided image at public/images/hero.jpg
+const BG_URL = "/images/hero.jpg";
 const inputCls = "w-full bg-d8-surface2 border border-d8-line px-4 py-3 text-white focus:outline-none focus:border-d8-red transition-colors";
 
 export default function Login() {
