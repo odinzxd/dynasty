@@ -199,6 +199,13 @@ def _row_to_ledger(row):
     return data
 
 
+def _row_to_cash_register(row):
+    if row is None:
+        return None
+    data = dict(row)
+    return data
+
+
 def _row_to_product(row):
     if row is None:
         return None
@@ -527,6 +534,20 @@ class LedgerCreate(BaseModel):
     direction: Literal["in", "out"]
     category: Optional[str] = None
     description: Optional[str] = None
+
+
+class CashRegister(BaseModel):
+    register_id: str
+    balance: float
+    note: Optional[str] = None
+    updated_at: str
+    updated_by: str
+    updated_by_name: str
+
+
+class CashRegisterUpdate(BaseModel):
+    balance: float
+    note: Optional[str] = None
 
 
 # =============== Helpers ===============
@@ -957,6 +978,27 @@ async def create_ledger_entry(payload: LedgerCreate, user: User = Depends(get_cu
     )
     await log_activity(user.user_id, user.email, "ledger_created", {"entry_id": entry["entry_id"], "amount": entry["amount"], "direction": entry["direction"]})
     return LedgerEntry(**entry)
+
+
+@api_router.get("/cash-register", response_model=CashRegister)
+async def get_cash_register(user: User = Depends(get_current_user)):
+    row = await _fetch_one("SELECT * FROM cash_register WHERE register_id = ?", ("main",))
+    if row is None:
+        now = datetime.now(timezone.utc).isoformat()
+        _execute_commit("INSERT INTO cash_register (register_id, balance, note, updated_at, updated_by, updated_by_name) VALUES (?, ?, ?, ?, ?, ?)",
+                        ("main", 0.0, "Første oppdatering", now, user.user_id, user.name))
+        row = await _fetch_one("SELECT * FROM cash_register WHERE register_id = ?", ("main",))
+    return CashRegister(**_row_to_cash_register(row))
+
+
+@api_router.post("/cash-register", response_model=CashRegister)
+async def update_cash_register(payload: CashRegisterUpdate, user: User = Depends(get_current_user)):
+    now = datetime.now(timezone.utc).isoformat()
+    _execute_commit("INSERT OR REPLACE INTO cash_register (register_id, balance, note, updated_at, updated_by, updated_by_name) VALUES (?, ?, ?, ?, ?, ?)",
+                    ("main", float(payload.balance), payload.note, now, user.user_id, user.name))
+    row = await _fetch_one("SELECT * FROM cash_register WHERE register_id = ?", ("main",))
+    await log_activity(user.user_id, user.email, "cash_register_updated", {"balance": payload.balance, "note": payload.note})
+    return CashRegister(**_row_to_cash_register(row))
 
 
 # =============== Stats ===============
