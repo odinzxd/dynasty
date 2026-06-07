@@ -112,12 +112,11 @@ export function createOfferDocument(sale) {
     <h2>Prissammendrag</h2>
     <table>
       <tr><th>Pris per dag</th><td>${base}</td></tr>
-      <tr><th>Totalpris</th><td>${total}</td></tr>
       <tr><th>Kommentar</th><td>${comment}</td></tr>
       <tr><th>Opprettet av</th><td>${createdBy}</td></tr>
     </table>
 
-    <p class="summary">Tilbudsbeløp: <span class="accent">${total}</span></p>
+    <p class="summary">Pris per dag: <span class="accent">${base}</span></p>
 
     <div class="footer">
       <p>Dette dokumentet kan brukes som tilbud til kunden.</p>

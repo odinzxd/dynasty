@@ -888,8 +888,8 @@ async def stats_dashboard(user: User = Depends(get_current_user)):
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     docs = await _fetch_all("SELECT * FROM sales WHERE employee_id = ? AND sale_date = ? ORDER BY created_at DESC", (user.user_id, today))
     sales = [_row_to_sale(row) for row in docs]
-    total_revenue = sum(d.get("total_price", 0) for d in sales if d.get("status") != "kansellert")
-    count = len([d for d in sales if d.get("status") != "kansellert"])
+    total_revenue = sum(d.get("total_price", 0) for d in sales if d.get("status") not in ("kansellert", "under_behandling"))
+    count = len([d for d in sales if d.get("status") not in ("kansellert", "under_behandling")])
     recent_rows = await _fetch_all("SELECT * FROM sales WHERE employee_id = ? ORDER BY created_at DESC LIMIT 5", (user.user_id,))
     return {
         "day_revenue": total_revenue,
@@ -902,7 +902,7 @@ async def stats_dashboard(user: User = Depends(get_current_user)):
 async def stats_admin(user: User = Depends(require_admin)):
     docs = await _fetch_all("SELECT * FROM sales ORDER BY sale_date DESC", ())
     sales = [_row_to_sale(row) for row in docs]
-    active = [d for d in sales if d.get("status") != "kansellert"]
+    active = [d for d in sales if d.get("status") not in ("kansellert", "under_behandling")]
     total_revenue = sum(d.get("total_price", 0) for d in active)
     per_emp = {}
     for d in active:
