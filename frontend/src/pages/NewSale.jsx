@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { api, formatNOK } from "@/lib/api";
+import { api, formatNOK, createOfferDocument, downloadFile } from "@/lib/api";
 import { toast } from "sonner";
 import { Calculator, CheckCircle2 } from "lucide-react";
 
@@ -78,13 +78,15 @@ export default function NewSale() {
     }
     setSubmitting(true);
     try {
-      await api.post("/sales", {
+      const response = await api.post("/sales", {
         ...form,
         package: form.product_id,
         tenant_count: Number(form.tenant_count) || 0,
         surcharge_amount: Number(form.surcharge_amount) || 0,
       });
       toast.success("Salg registrert");
+      const fileName = `tilbud-${response.data.sale_id}.html`;
+      downloadFile(createOfferDocument(response.data), fileName, "text/html");
       navigate("/sales");
     } catch (err) {
       toast.error(err?.response?.data?.detail || "Kunne ikke registrere salg");

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, formatNOK, formatDate, STATUS_LABELS, STATUS_COLORS } from "@/lib/api";
+import { Download } from "lucide-react";
+import { api, formatNOK, formatDate, STATUS_LABELS, STATUS_COLORS, createOfferDocument, downloadFile } from "@/lib/api";
 
 export default function MySales() {
   const [sales, setSales] = useState([]);
@@ -33,6 +34,7 @@ export default function MySales() {
               <th className="px-4 py-3 font-medium">Rabatt</th>
               <th className="px-4 py-3 font-medium text-right">Totalpris</th>
               <th className="px-4 py-3 font-medium">Status</th>
+              <th className="px-4 py-3 font-medium">Tilbud</th>
             </tr>
           </thead>
           <tbody>
@@ -52,6 +54,13 @@ export default function MySales() {
                   <span className={`inline-block px-2.5 py-1 text-[11px] uppercase tracking-wider border ${STATUS_COLORS[s.status]}`}>
                     {STATUS_LABELS[s.status]}
                   </span>
+                </td>
+                <td className="px-4 py-3">
+                  <button type="button" onClick={() => downloadFile(createOfferDocument(s), `tilbud-${s.sale_id}.html`, "text/html")}
+                    className="inline-flex items-center justify-center gap-2 rounded-md border border-d8-line bg-d8-surface2 px-3 py-2 text-sm text-white hover:border-white/40 transition-colors"
+                    data-testid={`download-offer-${s.sale_id}`}>
+                    <Download size={14} /> Last ned
+                  </button>
                 </td>
               </tr>
             ))}
