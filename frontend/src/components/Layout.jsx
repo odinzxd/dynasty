@@ -2,6 +2,7 @@ import React from "react";
 import { Link, NavLink, Outlet } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { LayoutDashboard, FilePlus2, ListChecks, Shield, LogOut, ScrollText, Users } from "lucide-react";
+import BrandLogo from "@/components/BrandLogo";
 
 function NavItem({ to, icon: Icon, label, testId, mobile = false }) {
   return (
@@ -47,10 +48,10 @@ export default function Layout() {
     <div className="min-h-screen bg-d8-bg text-white md:flex">
       <header className="sticky top-0 z-40 flex items-center justify-between border-b border-d8-line bg-d8-bg/95 px-4 py-3 backdrop-blur md:hidden">
         <Link to="/dashboard" className="flex items-center gap-3" data-testid="brand-link-mobile">
-          <div className="w-8 h-8 bg-d8-red flex items-center justify-center font-display text-white text-base">8</div>
+          <BrandLogo className="w-9 h-9" />
           <div>
-            <div className="font-display text-base leading-none">Dynasty</div>
-            <div className="text-[10px] uppercase tracking-[0.18em] text-d8-textMute mt-0.5">Salgssystem</div>
+            <div className="font-display text-base leading-none text-white">Dynasty</div>
+            <div className="text-[10px] uppercase tracking-[0.18em] text-[#F9CF4E] mt-0.5">Salgssystem</div>
           </div>
         </Link>
         <button
@@ -65,13 +66,13 @@ export default function Layout() {
 
       {/* Sidebar */}
       <aside className="hidden md:flex w-64 shrink-0 border-r border-d8-line bg-d8-surface/60 backdrop-blur-sm flex-col">
-        <div className="p-6 border-b border-d8-line">
+        <div className="p-6 border-b border-d8-line bg-gradient-to-b from-[#1f5235] via-[#0c1710] to-[#07110c]">
           <Link to="/dashboard" className="block" data-testid="brand-link">
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 bg-d8-red flex items-center justify-center font-display text-white text-lg">8</div>
+              <BrandLogo className="w-11 h-11" />
               <div>
-                <div className="font-display text-lg leading-none">Dynasty</div>
-                <div className="label-eyebrow mt-1">Salgssystem</div>
+                <div className="font-display text-lg leading-none text-white">Dynasty</div>
+                <div className="label-eyebrow mt-1 text-[#F9CF4E]">Salgssystem</div>
               </div>
             </div>
           </Link>
