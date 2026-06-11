@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { api, formatDate } from "@/lib/api";
+import { api, formatDate, formatNOK } from "@/lib/api";
 import { toast } from "sonner";
 import { KeyRound, Pencil, Plus, Trash2, UserX, ShieldCheck, ShieldOff, X, Power } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
@@ -17,8 +17,15 @@ export default function Employees() {
   const load = async () => {
     setLoading(true);
     try {
-      const r = await api.get("/users");
-      setUsers(r.data);
+      // Prefer the summary endpoint which includes sales totals and login status
+      try {
+        const r = await api.get("/users/summary");
+        setUsers(r.data);
+      } catch (err) {
+        // fallback to plain users list for older servers
+        const r = await api.get("/users");
+        setUsers(r.data);
+      }
     } finally {
       setLoading(false);
     }
@@ -90,9 +97,12 @@ export default function Employees() {
           <thead className="bg-neutral-100 border-b border-neutral-200 text-left">
             <tr>
               <th className="px-4 py-3 font-medium">Navn</th>
+              <th className="px-4 py-3 font-medium">Omsatt i dag</th>
+              <th className="px-4 py-3 font-medium">Salg denne uka</th>
               <th className="px-4 py-3 font-medium">Brukernavn</th>
               <th className="px-4 py-3 font-medium">E-post</th>
               <th className="px-4 py-3 font-medium">Ansattnr.</th>
+              <th className="px-4 py-3 font-medium">Siste pålogging</th>
               <th className="px-4 py-3 font-medium">Rolle</th>
               <th className="px-4 py-3 font-medium">Status</th>
               <th className="px-4 py-3 font-medium">Opprettet</th>
@@ -117,9 +127,12 @@ export default function Employees() {
                       <span className="font-medium">{u.name}{self && <span className="text-d8-red text-[10px] ml-2 uppercase tracking-wider">deg</span>}</span>
                     </div>
                   </td>
+                  <td className="px-4 py-3 text-neutral-700 font-medium">{formatNOK ? formatNOK(u.day_revenue) : u.day_revenue + ' kr'}</td>
+                  <td className="px-4 py-3 text-neutral-700">{u.week_count ?? 0}</td>
                   <td className="px-4 py-3 text-neutral-600 font-mono">{u.username || "-"}</td>
                   <td className="px-4 py-3 text-neutral-600">{u.email}</td>
                   <td className="px-4 py-3 text-neutral-600 font-mono">{u.employee_number || "-"}</td>
+                  <td className="px-4 py-3 text-neutral-600 text-sm">{u.online ? <span className="text-emerald-600">Pålogget nå</span> : (u.last_login ? formatDate(u.last_login) : "-")}</td>
                   <td className="px-4 py-3">
                     <span className={`inline-block px-2.5 py-1 text-[11px] uppercase tracking-wider border ${u.role === "admin" ? "border-d8-red text-d8-red bg-d8-red/10" : "border-neutral-300 text-neutral-700"}`}>
                       {u.role === "admin" ? "Administrator" : "Ansatt"}

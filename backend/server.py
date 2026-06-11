@@ -1250,6 +1250,41 @@ async def list_users(user: User = Depends(require_admin)):
     return [User(**_row_to_user(row)) for row in rows]
 
 
+@api_router.get("/users/summary")
+async def users_summary(user: User = Depends(require_admin)):
+    """Return list of users with sales summary (today revenue, this week count), last login and online status."""
+    rows = await _fetch_all("SELECT * FROM users ORDER BY name", ())
+    now = datetime.now(timezone.utc)
+    today = now.strftime("%Y-%m-%d")
+    week_start = (now - timedelta(days=now.weekday())).strftime("%Y-%m-%d")
+    result = []
+    for row in rows:
+        u = _row_to_user(row)
+        uid = row["user_id"]
+        # Today's revenue (exclude cancelled / processing)
+        td = await _fetch_one(
+            "SELECT COALESCE(SUM(total_price), 0) AS revenue FROM sales WHERE employee_id = ? AND sale_date = ? AND status NOT IN ('kansellert', 'under_behandling')",
+            (uid, today),
+        )
+        # This week's sales count
+        wk = await _fetch_one(
+            "SELECT COUNT(*) AS week_count FROM sales WHERE employee_id = ? AND sale_date >= ? AND sale_date <= ? AND status NOT IN ('kansellert', 'under_behandling')",
+            (uid, week_start, today),
+        )
+        # Last login from activity log
+        last = await _fetch_one("SELECT MAX(timestamp) AS last_login FROM activity_log WHERE user_id = ? AND action = 'login'", (uid,))
+        # Active sessions
+        active = await _fetch_one("SELECT COUNT(*) AS active_sessions FROM user_sessions WHERE user_id = ? AND expires_at > ?", (uid, now.isoformat()))
+
+        u["day_revenue"] = float(td["revenue"] or 0)
+        u["week_count"] = int(wk["week_count"] or 0)
+        u["last_login"] = last["last_login"] if last and last["last_login"] else None
+        u["online"] = bool(active and active["active_sessions"] > 0)
+        result.append(u)
+
+    return result
+
+
 @api_router.post("/users", response_model=User)
 async def create_user(payload: UserCreate, admin: User = Depends(require_admin)):
     username = payload.username.strip().lower()
