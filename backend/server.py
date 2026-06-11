@@ -1096,6 +1096,49 @@ async def stats_admin(user: User = Depends(require_admin)):
     }
 
 
+@api_router.get("/stats/range")
+async def stats_range(start: Optional[str] = None, end: Optional[str] = None, user: User = Depends(require_admin)):
+    """Return revenue per day and total revenue for sales between start and end (inclusive).
+    Dates should be in YYYY-MM-DD format. If end is omitted it's set to today. If start omitted it's unbounded.
+    """
+    if end:
+        end_date = end
+    else:
+        end_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    params = []
+    where = []
+    where.append("status NOT IN ('kansellert', 'under_behandling')")
+    where.append("sale_date <= ?")
+    params.append(end_date)
+    if start:
+        where.append("sale_date >= ?")
+        params.append(start)
+
+    where_clause = " AND ".join(where)
+    rows = await _fetch_all(f"SELECT * FROM sales WHERE {where_clause} ORDER BY sale_date", tuple(params))
+    docs = [_row_to_sale(row) for row in rows]
+    per_day = {}
+    total = 0
+    for d in docs:
+        sd = d.get("sale_date", "")
+        if len(sd) >= 10:
+            day = sd[:10]
+        else:
+            day = sd
+        per_day.setdefault(day, {"day": day, "revenue": 0, "count": 0})
+        per_day[day]["revenue"] += d.get("total_price", 0)
+        per_day[day]["count"] += 1
+        total += d.get("total_price", 0)
+
+    return {
+        "total_revenue": total,
+        "total_count": len(docs),
+        "per_day": sorted(per_day.values(), key=lambda x: x["day"]),
+        "sales": [Sale(**doc).model_dump(mode="json") for doc in docs],
+    }
+
+
 @api_router.get("/system/database")
 async def database_status(user: User = Depends(require_admin)):
     try:
