@@ -399,14 +399,14 @@ app = FastAPI(title="Dynasty 8 AS - Sales Management")
 api_router = APIRouter(prefix="/api")
 
 # =============== Price Matrix ===============
-ZONES = ["Jessheim", "Lillestr├©m", "Nedre Oslo", "├ÿvre Oslo", "Oslo Sentrum", "Oslo Sentralt"]
+ZONES = ["Jessheim", "Lillestrøm", "Nedre Oslo", "Øvre Oslo", "Oslo Sentrum", "Oslo Sentralt"]
 PACKAGES = ["Shell", "IPL", "MLO"]
 
 PRICE_MATRIX = {
     "Jessheim":     {"Shell": 5000,  "IPL": 5500,  "MLO": 8000},
-    "Lillestr├©m":   {"Shell": 5500,  "IPL": 9000,  "MLO": 13000},
+    "Lillestrøm":   {"Shell": 5500,  "IPL": 9000,  "MLO": 13000},
     "Nedre Oslo":   {"Shell": 7000,  "IPL": 11000, "MLO": 15000},
-    "├ÿvre Oslo":    {"Shell": 9000,  "IPL": 15000,  "MLO": 22000},
+    "Øvre Oslo":    {"Shell": 9000,  "IPL": 15000,  "MLO": 22000},
     "Oslo Sentrum": {"Shell": 12000, "IPL": 19000, "MLO": 26000},
     "Oslo Sentralt":{"Shell": 16000, "IPL": 26000, "MLO": 35000},
 }
@@ -1533,7 +1533,7 @@ async def update_user(user_id: str, body: dict, admin: User = Depends(require_ad
         if updates.get("is_active") is False:
             raise HTTPException(status_code=400, detail="Du kan ikke deaktivere din egen konto")
     if not updates:
-        raise HTTPException(status_code=400, detail="Ingen felter ├Ñ oppdatere")
+        raise HTTPException(status_code=400, detail="Ingen felter å oppdatere")
 
     fields = []
     params = []
