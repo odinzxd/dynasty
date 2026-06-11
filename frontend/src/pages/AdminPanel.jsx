@@ -44,6 +44,8 @@ export default function AdminPanel() {
   const [matrix, setMatrix] = useState(null);
   const [products, setProducts] = useState([]);
   const [coupons, setCoupons] = useState([]);
+  const [deals, setDeals] = useState([]);
+  const [announcements, setAnnouncements] = useState([]);
   const [databaseStatus, setDatabaseStatus] = useState(null);
   const [editSale, setEditSale] = useState(null);
   const [editProduct, setEditProduct] = useState(null);
@@ -52,18 +54,22 @@ export default function AdminPanel() {
   const [filters, setFilters] = useState({ zone: "", package: "", status: "", employee_id: "", date_from: "", date_to: "" });
 
   const loadAll = async () => {
-    const [s, sa, u, m, p, c, db] = await Promise.all([
+    const [s, sa, u, m, p, c, dls, anns, db] = await Promise.all([
       api.get("/stats/admin"),
       api.get("/sales", { params: { ...cleanFilters(filters) } }),
       api.get("/users"),
       api.get("/price-matrix"),
       api.get("/products"),
       api.get("/coupons"),
+      api.get("/company-deals").catch(() => ({ data: [] })),
+      api.get("/announcements").catch(() => ({ data: [] })),
       api.get("/system/database").catch(e => ({ data: { ok: false, error: e?.response?.data?.detail || "Kunne ikke sjekke database" } })),
     ]);
     setStats(s.data); setSales(sa.data); setUsers(u.data); setMatrix(m.data);
     setProducts(p.data);
     setCoupons(c.data);
+    setDeals(dls.data || []);
+    setAnnouncements(anns.data || []);
     setDatabaseStatus(db.data);
   };
 
@@ -160,6 +166,8 @@ export default function AdminPanel() {
 
       <ProductManager products={products} onEdit={setEditProduct} onDeleted={loadAll} />
       <CouponManager coupons={coupons} onEdit={setEditCoupon} onDeleted={loadAll} />
+      <DealManager deals={deals} onChanged={loadAll} />
+      <AnnouncementManager announcements={announcements} onChanged={loadAll} />
 
       {/* Filters */}
       <div className="d8-card mb-6">
@@ -421,6 +429,133 @@ function CouponManager({ coupons, onEdit, onDeleted }) {
                   <button onClick={() => onEdit(coupon)} className="text-neutral-600 hover:text-d8-red p-1.5 transition-colors"><Pencil size={14} /></button>
                   <button onClick={() => remove(coupon)} className="text-neutral-600 hover:text-d8-red p-1.5 transition-colors"><Trash2 size={14} /></button>
                 </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function DealManager({ deals, onChanged }) {
+  const [creating, setCreating] = useState(false);
+  const [form, setForm] = useState({ title: "", description: "", discount_percent: "", valid_from: "", valid_to: "" });
+
+  const submit = async (e) => {
+    e.preventDefault();
+    try {
+      await api.post("/company-deals", { ...form, discount_percent: form.discount_percent ? Number(form.discount_percent) : null });
+      setForm({ title: "", description: "", discount_percent: "", valid_from: "", valid_to: "" });
+      setCreating(false);
+      onChanged();
+    } catch (err) { toast.error(err?.response?.data?.detail || "Kunne ikke opprette avtale"); }
+  };
+
+  const remove = async (d) => {
+    if (!window.confirm(`Slette avtale "${d.title}"?`)) return;
+    try { await api.delete(`/company-deals/${d.deal_id}`); onChanged(); } catch { toast.error("Kunne ikke slette avtale"); }
+  };
+
+  return (
+    <div className="d8-card mb-10">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <div className="label-eyebrow mb-2">Bedriftsavtaler</div>
+          <h2 className="font-display text-2xl">Oversikt avtaler</h2>
+        </div>
+        <button onClick={() => setCreating(c => !c)} className="inline-flex items-center gap-2 border px-3 py-2">{creating ? "Avbryt" : <><Plus size={14} /> Ny avtale</>}</button>
+      </div>
+      {creating && (
+        <form onSubmit={submit} className="space-y-3 mb-4">
+          <input className={inputCls} placeholder="Tittel" value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} />
+          <textarea className={inputCls} placeholder="Beskrivelse" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
+          <div className="grid grid-cols-2 gap-3">
+            <input className={inputCls} placeholder="Rabatt %" value={form.discount_percent} onChange={e => setForm(f => ({ ...f, discount_percent: e.target.value }))} />
+            <input type="date" className={inputCls} value={form.valid_from} onChange={e => setForm(f => ({ ...f, valid_from: e.target.value }))} />
+          </div>
+          <div className="flex justify-end">
+            <button type="submit" className="bg-d8-red text-white px-4 py-2">Opprett avtale</button>
+          </div>
+        </form>
+      )}
+      <div className="d8-table">
+        <table className="w-full text-sm">
+          <thead className="bg-neutral-100 border-b border-neutral-200 text-left">
+            <tr>
+              <th className="px-4 py-3">Tittel</th>
+              <th className="px-4 py-3">Beskrivelse</th>
+              <th className="px-4 py-3">Rabatt</th>
+              <th className="px-4 py-3 text-right">Handling</th>
+            </tr>
+          </thead>
+          <tbody>
+            {deals.length === 0 ? (
+              <tr><td colSpan={4} className="px-4 py-8 text-neutral-500">Ingen bedriftsavtaler.</td></tr>
+            ) : deals.map(d => (
+              <tr key={d.deal_id} className="border-b border-neutral-100 hover:bg-neutral-50">
+                <td className="px-4 py-3 font-medium">{d.title}</td>
+                <td className="px-4 py-3 text-neutral-600">{d.description}</td>
+                <td className="px-4 py-3">{d.discount_percent ? `${d.discount_percent}%` : '-'}</td>
+                <td className="px-4 py-3 text-right"><button onClick={() => remove(d)} className="text-neutral-600 hover:text-d8-red"><Trash2 size={14} /></button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function AnnouncementManager({ announcements, onChanged }) {
+  const [form, setForm] = useState({ title: "", content: "" });
+  const submit = async (e) => {
+    e.preventDefault();
+    try {
+      await api.post("/announcements", form);
+      setForm({ title: "", content: "" });
+      onChanged();
+    } catch (err) { toast.error(err?.response?.data?.detail || "Kunne ikke publisere"); }
+  };
+
+  const remove = async (a) => {
+    if (!window.confirm(`Slette kunngjøring "${a.title}"?`)) return;
+    try { await api.delete(`/announcements/${a.announcement_id}`); onChanged(); } catch { toast.error("Kunne ikke slette kunngjøring"); }
+  };
+
+  return (
+    <div className="d8-card mb-10">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <div className="label-eyebrow mb-2">Kunngjøringer</div>
+          <h2 className="font-display text-2xl">Interne meldinger</h2>
+        </div>
+      </div>
+      <form onSubmit={submit} className="space-y-3 mb-4">
+        <input className={inputCls} placeholder="Tittel" value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} />
+        <textarea className={inputCls} placeholder="Innhold" value={form.content} onChange={e => setForm(f => ({ ...f, content: e.target.value }))} />
+        <div className="flex justify-end">
+          <button type="submit" className="bg-d8-red text-white px-4 py-2">Publiser</button>
+        </div>
+      </form>
+
+      <div className="d8-table">
+        <table className="w-full text-sm">
+          <thead className="bg-neutral-100 border-b border-neutral-200 text-left">
+            <tr>
+              <th className="px-4 py-3">Tittel</th>
+              <th className="px-4 py-3">Innhold</th>
+              <th className="px-4 py-3 text-right">Handling</th>
+            </tr>
+          </thead>
+          <tbody>
+            {announcements.length === 0 ? (
+              <tr><td colSpan={3} className="px-4 py-8 text-neutral-500">Ingen kunngjøringer.</td></tr>
+            ) : announcements.map(a => (
+              <tr key={a.announcement_id} className="border-b border-neutral-100 hover:bg-neutral-50">
+                <td className="px-4 py-3 font-medium">{a.title}</td>
+                <td className="px-4 py-3 text-neutral-600">{a.content}</td>
+                <td className="px-4 py-3 text-right"><button onClick={() => remove(a)} className="text-neutral-600 hover:text-d8-red"><Trash2 size={14} /></button></td>
               </tr>
             ))}
           </tbody>

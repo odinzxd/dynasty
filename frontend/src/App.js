@@ -8,6 +8,7 @@ import Dashboard from "@/pages/Dashboard";
 import NewSale from "@/pages/NewSale";
 import MySales from "@/pages/MySales";
 import AdminPanel from "@/pages/AdminPanel";
+import Corporate from "@/pages/Corporate";
 import ActivityLog from "@/pages/ActivityLog";
 import Employees from "@/pages/Employees";
 import Accounting from "@/pages/Accounting";
@@ -24,6 +25,7 @@ function AppRouter() {
         <Route path="/sales/new" element={<NewSale />} />
         <Route path="/sales" element={<MySales />} />
         <Route path="/admin" element={<ProtectedRoute adminOnly><AdminPanel /></ProtectedRoute>} />
+        <Route path="/corporate" element={<ProtectedRoute><Corporate /></ProtectedRoute>} />
         <Route path="/admin/employees" element={<ProtectedRoute adminOnly><Employees /></ProtectedRoute>} />
         <Route path="/admin/activity" element={<ProtectedRoute adminOnly><ActivityLog /></ProtectedRoute>} />
         <Route path="/admin/accounting" element={<ProtectedRoute adminOnly><Accounting /></ProtectedRoute>} />

@@ -192,6 +192,22 @@ def _row_to_activity(row):
     return data
 
 
+def _row_to_deal(row):
+    if row is None:
+        return None
+    data = dict(row)
+    data['is_active'] = bool(data.get('is_active', 1))
+    return data
+
+
+def _row_to_announcement(row):
+    if row is None:
+        return None
+    data = dict(row)
+    data['is_active'] = bool(data.get('is_active', 1))
+    return data
+
+
 def _row_to_ledger(row):
     if row is None:
         return None
@@ -320,6 +336,31 @@ def _init_db():
             timestamp TEXT NOT NULL
         )
     ''', commit=True)
+    _execute('''
+        CREATE TABLE IF NOT EXISTS company_deals (
+            deal_id TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            description TEXT NOT NULL,
+            terms TEXT,
+            discount_percent REAL,
+            valid_from TEXT,
+            valid_to TEXT,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_by TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+    ''', commit=True)
+
+    _execute('''
+        CREATE TABLE IF NOT EXISTS announcements (
+            announcement_id TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            content TEXT NOT NULL,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_by TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+    ''', commit=True)
 
     # Ledger / accounting table
     _execute('''
@@ -346,6 +387,8 @@ def _init_db():
     _execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_discount_coupons_code ON discount_coupons(code)', commit=True)
     _execute('CREATE INDEX IF NOT EXISTS idx_activity_log_timestamp ON activity_log(timestamp)', commit=True)
     _execute('CREATE INDEX IF NOT EXISTS idx_ledger_entry_date ON ledger(entry_date)', commit=True)
+    _execute('CREATE INDEX IF NOT EXISTS idx_company_deals_active ON company_deals(is_active)', commit=True)
+    _execute('CREATE INDEX IF NOT EXISTS idx_announcements_active ON announcements(is_active)', commit=True)
     _ensure_initial_admin()
     _ensure_default_products()
 
@@ -1077,6 +1120,97 @@ async def database_status(user: User = Depends(require_admin)):
 async def list_products(user: User = Depends(require_admin)):
     rows = await _fetch_all("SELECT * FROM sale_products ORDER BY category, name", ())
     return [SaleProduct(**_row_to_product(row)) for row in rows]
+
+
+# =============== Company Deals ===============
+@api_router.get("/company-deals")
+async def list_company_deals(user: User = Depends(get_current_user)):
+    rows = await _fetch_all("SELECT * FROM company_deals WHERE is_active = 1 ORDER BY created_at DESC", ())
+    return [_row_to_deal(row) for row in rows]
+
+
+@api_router.post("/company-deals")
+async def create_company_deal(body: dict, user: User = Depends(require_admin)):
+    title = (body.get("title") or "").strip()
+    description = (body.get("description") or "").strip()
+    if not title or not description:
+        raise HTTPException(status_code=400, detail="Tittel og beskrivelse kreves")
+    now = datetime.now(timezone.utc).isoformat()
+    deal_id = f"deal_{uuid.uuid4().hex[:12]}"
+    await _execute_commit(
+        "INSERT INTO company_deals (deal_id, title, description, terms, discount_percent, valid_from, valid_to, is_active, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (deal_id, title, description, body.get("terms"), body.get("discount_percent") or None, body.get("valid_from"), body.get("valid_to"), 1, user.user_id, now),
+    )
+    row = await _fetch_one("SELECT * FROM company_deals WHERE deal_id = ?", (deal_id,))
+    await log_activity(user.user_id, user.email, "company_deal_created", {"deal_id": deal_id})
+    return _row_to_deal(row)
+
+
+@api_router.patch("/company-deals/{deal_id}")
+async def update_company_deal(deal_id: str, body: dict, user: User = Depends(require_admin)):
+    existing = await _fetch_one("SELECT * FROM company_deals WHERE deal_id = ?", (deal_id,))
+    if not existing:
+        raise HTTPException(status_code=404, detail="Avtale ikke funnet")
+    updates = {}
+    for k in ("title", "description", "terms", "discount_percent", "valid_from", "valid_to", "is_active"):
+        if k in body:
+            updates[k] = body[k]
+    if not updates:
+        raise HTTPException(status_code=400, detail="Ingen felter å oppdatere")
+    fields = []
+    params = []
+    for key, value in updates.items():
+        fields.append(f"{key} = ?")
+        params.append(1 if key == "is_active" and value in (True, 1, "1") else value)
+    params.append(deal_id)
+    await _execute_commit(f"UPDATE company_deals SET {', '.join(fields)} WHERE deal_id = ?", tuple(params))
+    row = await _fetch_one("SELECT * FROM company_deals WHERE deal_id = ?", (deal_id,))
+    await log_activity(user.user_id, user.email, "company_deal_updated", {"deal_id": deal_id, "changes": list(updates.keys())})
+    return _row_to_deal(row)
+
+
+@api_router.delete("/company-deals/{deal_id}")
+async def delete_company_deal(deal_id: str, user: User = Depends(require_admin)):
+    existing = await _fetch_one("SELECT * FROM company_deals WHERE deal_id = ?", (deal_id,))
+    if not existing:
+        raise HTTPException(status_code=404, detail="Avtale ikke funnet")
+    await _execute_commit("DELETE FROM company_deals WHERE deal_id = ?", (deal_id,))
+    await log_activity(user.user_id, user.email, "company_deal_deleted", {"deal_id": deal_id})
+    return {"ok": True}
+
+
+# =============== Announcements ===============
+@api_router.get("/announcements")
+async def list_announcements(user: User = Depends(get_current_user)):
+    rows = await _fetch_all("SELECT * FROM announcements WHERE is_active = 1 ORDER BY created_at DESC", ())
+    return [_row_to_announcement(row) for row in rows]
+
+
+@api_router.post("/announcements")
+async def create_announcement(body: dict, user: User = Depends(require_admin)):
+    title = (body.get("title") or "").strip()
+    content = (body.get("content") or "").strip()
+    if not title or not content:
+        raise HTTPException(status_code=400, detail="Tittel og innhold kreves")
+    now = datetime.now(timezone.utc).isoformat()
+    announcement_id = f"ann_{uuid.uuid4().hex[:12]}"
+    await _execute_commit(
+        "INSERT INTO announcements (announcement_id, title, content, is_active, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+        (announcement_id, title, content, 1, user.user_id, now),
+    )
+    row = await _fetch_one("SELECT * FROM announcements WHERE announcement_id = ?", (announcement_id,))
+    await log_activity(user.user_id, user.email, "announcement_created", {"announcement_id": announcement_id})
+    return _row_to_announcement(row)
+
+
+@api_router.delete("/announcements/{announcement_id}")
+async def delete_announcement(announcement_id: str, user: User = Depends(require_admin)):
+    existing = await _fetch_one("SELECT * FROM announcements WHERE announcement_id = ?", (announcement_id,))
+    if not existing:
+        raise HTTPException(status_code=404, detail="Annonse ikke funnet")
+    await _execute_commit("DELETE FROM announcements WHERE announcement_id = ?", (announcement_id,))
+    await log_activity(user.user_id, user.email, "announcement_deleted", {"announcement_id": announcement_id})
+    return {"ok": True}
 
 
 @api_router.post("/products", response_model=SaleProduct)
