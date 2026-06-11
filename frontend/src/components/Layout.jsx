@@ -1,7 +1,7 @@
 import React from "react";
 import { Link, NavLink, Outlet } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
-import { LayoutDashboard, FilePlus2, ListChecks, Shield, LogOut, ScrollText, Users } from "lucide-react";
+import { LayoutDashboard, FilePlus2, ListChecks, Shield, LogOut, ScrollText, Users, BarChart } from "lucide-react";
 import BrandLogo from "@/components/BrandLogo";
 
 function NavItem({ to, icon: Icon, label, testId, mobile = false }) {
@@ -35,6 +35,7 @@ export default function Layout() {
     { to: "/dashboard", icon: LayoutDashboard, label: "Dashboard", testId: "nav-dashboard" },
     { to: "/sales/new", icon: FilePlus2, label: "Nytt salg", testId: "nav-new-sale" },
     { to: "/sales", icon: ListChecks, label: "Mine salg", testId: "nav-my-sales" },
+    { to: "/corporate", icon: ScrollText, label: "Bedriftsavtaler", testId: "nav-corporate" },
   ];
   const adminItems = user?.role === "admin"
     ? [
@@ -42,6 +43,7 @@ export default function Layout() {
         { to: "/admin/employees", icon: Users, label: "Ansatte", testId: "nav-employees" },
         { to: "/admin/activity", icon: ScrollText, label: "Logg", testId: "nav-activity" },
         { to: "/admin/accounting", icon: ScrollText, label: "Regnskap", testId: "nav-accounting" },
+        { to: "/admin/stats", icon: BarChart, label: "Statistikk", testId: "nav-stats" },
       ]
     : [];
 
